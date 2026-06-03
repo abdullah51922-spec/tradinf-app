@@ -1,22 +1,159 @@
-
-# ============ المتطلبات: pip install streamlit streamlit-autorefresh pandas python-dotenv sahmk ============
+# ============================================================
+# داشبورد التداول السعودي - النسخة المحسّنة
+# ============================================================
 
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 import pandas as pd
-from datetime import datetime
-# ============ تحميل المفاتيح من .env (أمان) ============
+import numpy as np
+import pytz
+import json
+import csv
+import os
+from datetime import datetime, timedelta
+
+# ============================================================
+# 1. الإعدادات الأساسية
+# ============================================================
+
+RIYADH_TZ = pytz.timezone("Asia/Riyadh")
+
+def now_riyadh():
+    return datetime.now(RIYADH_TZ)
+
+# أوقات السوق
+MARKET_PRE_OPEN  = 9 * 60 + 30   # 9:30
+MARKET_SIGNALS   = 10 * 60 + 15  # 10:15
+MARKET_OPEN      = 10 * 60        # 10:00
+MARKET_CLOSE     = 15 * 60        # 15:00
+MARKET_POST      = 15 * 60 + 30  # 15:30
+REPORT_TIME      = 15 * 60 + 15  # 15:15
+
+# رأس المال
+CAPITAL_DAILY    = 100_000
+CAPITAL_MID      = 100_000
+CAPITAL_RESERVE  = 100_000
+CAPITAL_SAFETY   = 100_000
+MAX_TRADE_DAILY  = 20_000
+MAX_TRADE_MID    = 30_000
+DAILY_LOSS_STOP  = 15_000
+
+# أهداف
+TARGET_DAILY_PCT = 0.5
+TARGET_MID_PCT   = 2.0
+
+# مؤشرات
+VOL_SPIKE_HIGH   = 1.5
+VOL_SPIKE_VERY   = 2.0
+ATR_MULTIPLIER   = 1.5
+
+# مسارات البيانات
+DATA_DIR         = "data"
+SIGNALS_DB       = os.path.join(DATA_DIR, "signals_database.csv")
+PERF_HISTORY     = os.path.join(DATA_DIR, "performance_history.csv")
+DAILY_DIR        = os.path.join(DATA_DIR, "daily_reports")
+WEEKLY_DIR       = os.path.join(DATA_DIR, "weekly_reports")
+MONTHLY_DIR      = os.path.join(DATA_DIR, "monthly_reports")
+
+# إنشاء المجلدات
+for d in [DATA_DIR, DAILY_DIR, WEEKLY_DIR, MONTHLY_DIR]:
+    os.makedirs(d, exist_ok=True)
+
+# ============================================================
+# 2. قوائم الأسهم
+# ============================================================
+
+STOCKS_ACTIVE = [
+    ("2222","أرامكو"),("1120","الراجحي"),("7010","STC"),
+    ("1180","الأهلي"),("1050","بنك الرياض"),("1211","معادن"),
+    ("2082","أكوا باور"),("2010","سابك"),("4030","البلاد"),
+    ("1020","الجزيرة"),("2350","سافكو"),("4200","الاتصالات"),
+    ("4210","زين"),("4220","موبايلي"),("2060","نماء"),
+    ("1150","البنك الأهلي"),("4300","جرير"),("4001","الشرق"),
+    ("2150","التعمير"),("4260","الوطنية"),("4031","بن داود"),
+    ("1140","البنك السعودي"),("4050","سالك"),("2330","أدوية"),
+    ("1030","الرياض"),("2380","بترو رابغ"),("1810","أملاك"),
+    ("4240","بنده"),("2360","بترو كيم"),("1060","البلاد2"),
+    ("2290","أبوقير"),("2160","رالكو"),("4160","تكامين"),
+    ("2190","جبسكو"),("4280","المملكة"),("2370","مصافي"),
+    ("4310","عسير"),("4320","اليمامة"),("2250","سدافكو"),
+    ("4180","فتيحي"),("2100","وفرة"),("4130","بنك البلاد"),
+    ("3002","التعاونية"),("3003","ملاذ"),("3007","ولاء"),
+    ("3010","الدرع العربي"),("4150","المراعي"),("4051","فواز"),
+    ("4060","عبدالله العثيم"),("4190","الخزف"),
+]
+
+STOCKS_SCAN = [
+    ("1010","الأسمنت السعودية"),("1040","السعودية للصناعات"),
+    ("1070","التصنيع"),("1080","الخليج"),("1090","الزامل"),
+    ("1111","دار الأركان"),("1160","الأهلي للتمويل"),
+    ("1170","SABB"),("1301","أسمنت العربية"),("1302","أسمنت اليمامة"),
+    ("1303","أسمنت السعودية"),("1304","أسمنت القصيم"),
+    ("1305","أسمنت الجنوب"),("1310","أسمنت ينبع"),
+    ("1320","أسمنت تبوك"),("1330","أسمنت نجران"),
+    ("2001","كيان"),("2030","البتروكيم"),
+    ("2080","ابن رشد"),("2130","المجموعة السعودية"),
+    ("2170","الجبيل"),("2180","الزامل للصناعة"),
+    ("2200","أراضي"),("2230","كيمانول"),
+    ("2240","إنترانس"),("2270","سابك للمغذيات"),
+    ("2300","السعودية للخدمات"),("2310","المتحدة"),
+    ("2390","الرياض للصناعة"),("3001","سلامة"),
+    ("3004","الأهلية"),("3005","البلاد للتأمين"),
+    ("3006","الراجحي للتأمين"),("3008","الاتحاد الخليجي"),
+    ("3009","بوبا العربية"),("3011","أمانة"),("3012","وقاية"),
+    ("3015","تكافل الراجحي"),("3016","أليانز"),
+    ("3017","المتحدة للتأمين"),("3020","ميدغلف"),
+    ("4002","المطاحن"),("4003","الغذائية"),("4004","الزاد"),
+    ("4005","هرفي"),("4011","البحري"),
+    ("4020","طيران ناس"),("4040","الحكير"),("4070","الأندلس"),
+    ("4090","الفرسان"),("4100","الموارد"),
+    ("4140","أنعام"),("4170","الدريم"),("4230","المتقدمة للتقنية"),
+    ("4270","سدير"),("4290","تهامة"),
+    ("4340","النخيل"),("4345","الشرق الأوسط"),
+    ("2040","الخليج للبتروكيم"),("2090","نماء للكيماويات"),
+    ("2140","اليانسون"),("2210","نفط الهلال"),
+    ("2260","الشرقية للتنمية"),("2320","الخليج الدولية"),
+    ("2340","وادي النيل"),("3013","الخليج للتأمين"),
+    ("3014","الصقر"),("3018","الاتحاد للتأمين"),
+    ("4007","الجوف"),("4008","تبوك الزراعية"),
+    ("4080","المتطورة"),("4346","الخليج"),
+]
+
+# ============================================================
+# 3. المصادقة والاتصال بـ API
+# ============================================================
+
+st.set_page_config(
+    page_title="داشبورد التداول السعودي",
+    layout="wide",
+    page_icon="📊",
+    initial_sidebar_state="collapsed"
+)
+
 API_KEY = st.secrets["API_KEY"]
+
 if "auth" not in st.session_state:
     st.session_state.auth = False
+if "paper_mode" not in st.session_state:
+    st.session_state.paper_mode = False
+if "daily_pnl" not in st.session_state:
+    st.session_state.daily_pnl = 0.0
+if "bot_active" not in st.session_state:
+    st.session_state.bot_active = True
+if "signal_log" not in st.session_state:
+    st.session_state.signal_log = []
+
 if not st.session_state.auth:
-    pwd = st.text_input("كلمة المرور", type="password")
-    if st.button("دخول"):
-        if pwd == "Theapp1994":
-            st.session_state.auth = True
-            st.rerun()
-        else:
-            st.error("خاطئة")
+    st.markdown("<h2 style='text-align:center;margin-top:100px'>📊 داشبورد التداول السعودي</h2>", unsafe_allow_html=True)
+    col_a, col_b, col_c = st.columns([1,1,1])
+    with col_b:
+        pwd = st.text_input("كلمة المرور", type="password")
+        if st.button("دخول", use_container_width=True):
+            if pwd == "Theapp1994":
+                st.session_state.auth = True
+                st.rerun()
+            else:
+                st.error("كلمة مرور خاطئة")
     st.stop()
 
 try:
@@ -26,70 +163,11 @@ except Exception as e:
     st.error(f"❌ خطأ في الاتصال بـ API: {e}")
     st.stop()
 
-# ============ الأسهم ============
-STOCKS_ACTIVE = [
-    ("2222", "أرامكو"), ("1120", "الراجحي"), ("7010", "STC"),
-    ("1180", "الأهلي"), ("1050", "بنك الرياض"), ("1211", "معادن"),
-    ("2082", "أكوا باور"), ("2010", "سابك"), ("4030", "البلاد"),
-    ("1020", "الجزيرة"), ("2350", "سافكو"), ("4200", "الاتصالات"),
-    ("4210", "زين"), ("4220", "موبايلي"), ("2060", "نماء"),
-    ("1150", "البنك الأهلي"), ("4300", "جرير"), ("4001", "الشرق"),
-    ("2150", "التعمير"), ("4260", "الوطنية"), ("4031", "بن داود"),
-    ("1140", "البنك السعودي"), ("4050", "سالك"), ("2330", "أدوية"),
-    ("1030", "الرياض"), ("2380", "بترو رابغ"), ("1810", "أملاك"),
-    ("4240", "بنده"), ("2360", "بترو كيم"), ("1060", "البلاد2"),
-    ("2290", "أبوقير"), ("2160", "رالكو"), ("4160", "تكامين"),
-    ("2190", "جبسكو"), ("4280", "المملكة"), ("2370", "مصافي"),
-    ("4310", "عسير"), ("4320", "اليمامة"), ("2250", "سدافكو"),
-    ("4180", "فتيحي"), ("2100", "وفرة"), ("4130", "بنك البلاد"),
-    ("3002", "التعاونية"), ("3003", "ملاذ"), ("3007", "ولاء"),
-    ("3010", "الدرع العربي"), ("4150", "المراعي"), ("4051", "فواز"),
-    ("4060", "عبدالله العثيم"), ("4190", "الخزف"),
-]
+# ============================================================
+# 4. جلب البيانات
+# ============================================================
 
-STOCKS_SCAN = [
-    ("1010", "الأسمنت السعودية"), ("1040", "السعودية للصناعات"),
-    ("1070", "التصنيع"), ("1080", "الخليج"), ("1090", "الزامل"),
-    ("1111", "دار الأركان"), ("1160", "الأهلي للتمويل"),
-    ("1170", "SABB"), ("1301", "أسمنت العربية"), ("1302", "أسمنت اليمامة"),
-    ("1303", "أسمنت السعودية"), ("1304", "أسمنت القصيم"),
-    ("1305", "أسمنت الجنوب"), ("1310", "أسمنت ينبع"),
-    ("1320", "أسمنت تبوك"), ("1330", "أسمنت نجران"),
-    ("2001", "كيان"), ("2030", "البتروكيم"),
-    ("2080", "ابن رشد"), ("2130", "المجموعة السعودية"),
-    ("2170", "الجبيل"), ("2180", "الزامل للصناعة"),
-    ("2200", "أراضي"), ("2230", "كيمانول"),
-    ("2240", "إنترانس"), ("2270", "سابك للمغذيات"),
-    ("2300", "السعودية للخدمات"), ("2310", "المتحدة"),
-    ("2390", "الرياض للصناعة"), ("3001", "سلامة"),
-    ("3004", "الأهلية"), ("3005", "البلاد للتأمين"),
-    ("3006", "الراجحي للتأمين"), ("3008", "الاتحاد الخليجي"),
-    ("3009", "بوبا العربية"), ("3011", "أمانة"), ("3012", "وقاية"),
-    ("3015", "تكافل الراجحي"), ("3016", "أليانز"),
-    ("3017", "المتحدة للتأمين"), ("3020", "ميدغلف"),
-    ("4002", "المطاحن"), ("4003", "الغذائية"), ("4004", "الزاد"),
-    ("4005", "هرفي"), ("4011", "البحري"),
-    ("4020", "طيران ناس"), ("4040", "الحكير"), ("4070", "الأندلس"),
-    ("4090", "الفرسان"), ("4100", "الموارد"),
-    ("4140", "أنعام"), ("4170", "الدريم"), ("4230", "المتقدمة للتقنية"),
-    ("4270", "سدير"), ("4290", "تهامة"),
-    ("4340", "النخيل"), ("4345", "الشرق الأوسط"),
-    ("2040", "الخليج للبتروكيم"), ("2090", "نماء للكيماويات"),
-    ("2140", "اليانسون"), ("2210", "نفط الهلال"),
-    ("2260", "الشرقية للتنمية"), ("2320", "الخليج الدولية"),
-    ("2340", "وادي النيل"), ("3013", "الخليج للتأمين"),
-    ("3014", "الصقر"), ("3018", "الاتحاد للتأمين"),
-    ("4007", "الجوف"), ("4008", "تبوك الزراعية"),
-    ("4080", "المتطورة"), ("4346", "الخليج"),
-]
-
-# ============ أهداف الربح الثلاثة (بالمئة) ============
-TARGET_1_PCT = 1.5   # هدف 1 - محافظ
-TARGET_2_PCT = 3.0   # هدف 2 - متوسط
-TARGET_3_PCT = 5.0   # هدف 3 - جريء
-
-# ============ جلب البيانات ============
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def get_all_quotes():
     try:
         all_syms = [s[0] for s in STOCKS_ACTIVE + STOCKS_SCAN]
@@ -102,12 +180,16 @@ def get_all_quotes():
                 for q in result.quotes:
                     quotes_dict[q.symbol] = q
             except Exception as e:
-                errors.append(f"batch {i}: {str(e)[:50]}")
+                err_msg = str(e)
+                if "403" in err_msg:
+                    st.error("❌ API Key منتهي أو غير صالح (403). توقف التداول.")
+                    st.stop()
+                errors.append(f"batch {i}: {err_msg[:50]}")
         return quotes_dict, errors
     except Exception as e:
         return {}, [str(e)]
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=300)
 def get_historical(sym):
     try:
         h = client.historical(sym, from_date="2025-01-01")
@@ -122,68 +204,79 @@ def get_historical(sym):
     except Exception:
         return [], [], [], []
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def get_market():
     try:
         return client.market_summary(), None
     except Exception as e:
         return None, str(e)
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=600)
 def get_movers():
     try:
         return client.gainers(), client.losers(), client.volume_leaders(), None
     except Exception as e:
         return None, None, None, str(e)
 
-# ============ المؤشرات الفنية (محسّنة رياضياً) ============
+# ============================================================
+# 5. المؤشرات الفنية
+# ============================================================
+
 def calc_ema_series(data, period):
-    """حساب EMA صحيح على كامل السلسلة"""
     if len(data) < period:
         return []
     k = 2.0 / (period + 1)
-    ema = [sum(data[:period]) / period]  # SMA كبداية
+    ema = [sum(data[:period]) / period]
     for price in data[period:]:
         ema.append(price * k + ema[-1] * (1 - k))
     return ema
 
 def calc_rsi(closes, period=14):
-    """RSI بطريقة Wilder's smoothing الصحيحة"""
     if len(closes) < period + 1:
         return 50.0
     deltas = [closes[i] - closes[i-1] for i in range(1, len(closes))]
-    gains = [max(d, 0.0) for d in deltas]
+    gains  = [max(d, 0.0) for d in deltas]
     losses = [max(-d, 0.0) for d in deltas]
-    
-    # Wilder's smoothing
     avg_gain = sum(gains[:period]) / period
     avg_loss = sum(losses[:period]) / period
-    
     for i in range(period, len(gains)):
         avg_gain = (avg_gain * (period - 1) + gains[i]) / period
         avg_loss = (avg_loss * (period - 1) + losses[i]) / period
-    
     if avg_loss == 0:
         return 100.0
     rs = avg_gain / avg_loss
     return round(100 - (100 / (1 + rs)), 1)
 
+def calc_rsi_direction(closes, period=14, lookback=5):
+    """اتجاه RSI - هل يصعد أم ينزل؟"""
+    if len(closes) < period + lookback + 1:
+        return 0.0
+    rsi_now  = calc_rsi(closes, period)
+    rsi_prev = calc_rsi(closes[:-lookback], period)
+    return round(rsi_now - rsi_prev, 1)
+
 def calc_macd(closes):
-    """MACD صحيح مع EMA كامل"""
     if len(closes) < 35:
         return 0.0, 0.0, 0.0
     ema12 = calc_ema_series(closes, 12)
     ema26 = calc_ema_series(closes, 26)
     min_len = min(len(ema12), len(ema26))
-    macd_line = [ema12[-(min_len - i)] - ema26[-(min_len - i)] 
-                 for i in range(min_len)]
+    macd_line = [ema12[-(min_len-i)] - ema26[-(min_len-i)] for i in range(min_len)]
     if len(macd_line) < 9:
         return 0.0, 0.0, 0.0
     signal_line = calc_ema_series(macd_line, 9)
-    macd_val = macd_line[-1]
+    macd_val   = macd_line[-1]
     signal_val = signal_line[-1] if signal_line else 0.0
-    histogram = macd_val - signal_val
+    histogram  = macd_val - signal_val
     return round(macd_val, 3), round(signal_val, 3), round(histogram, 3)
+
+def calc_macd_direction(closes, lookback=3):
+    """هل الـ histogram بيصعد أم بينزل؟"""
+    if len(closes) < 38 + lookback:
+        return 0.0
+    _, _, hist_now  = calc_macd(closes)
+    _, _, hist_prev = calc_macd(closes[:-lookback])
+    return round(hist_now - hist_prev, 4)
 
 def calc_ma(closes, period):
     if len(closes) < period:
@@ -193,14 +286,13 @@ def calc_ma(closes, period):
 def calc_bollinger(closes, period=20, std_dev=2):
     if len(closes) < period:
         return 0.0, 0.0, 0.0
-    recent = closes[-period:]
-    ma = sum(recent) / period
+    recent   = closes[-period:]
+    ma       = sum(recent) / period
     variance = sum((x - ma) ** 2 for x in recent) / period
-    std = variance ** 0.5
-    return round(ma + std_dev * std, 2), round(ma, 2), round(ma - std_dev * std, 2)
+    std      = variance ** 0.5
+    return round(ma + std_dev*std, 2), round(ma, 2), round(ma - std_dev*std, 2)
 
 def calc_atr(highs, lows, closes, period=14):
-    """Average True Range لقياس التذبذب"""
     if len(closes) < period + 1:
         return 0.0
     tr_list = []
@@ -210,134 +302,299 @@ def calc_atr(highs, lows, closes, period=14):
         tr_list.append(tr)
     if len(tr_list) < period:
         return 0.0
-    atr = sum(tr_list[-period:]) / period
-    return round(atr, 3)
-
-def calc_candles(closes, highs, lows):
-    """فحص نمط الشمعات مع منطق أدق"""
-    if len(closes) < 4:
-        return False, "—"
-    
-    # Engulfing صاعد
-    if (closes[-2] < closes[-3] and  # شمعة حمراء
-        closes[-1] > closes[-2] and   # شمعة خضراء
-        closes[-1] > closes[-3] and   # تجاوزت الافتتاح السابق
-        lows[-1] < lows[-2]):         # ابتلعت القاع
-        return True, "ابتلاع 🟢"
-    
-    # Hammer
-    body = abs(closes[-1] - closes[-2])
-    candle_range = highs[-1] - lows[-1]
-    lower_shadow = min(closes[-1], closes[-2]) - lows[-1]
-    if candle_range > 0 and lower_shadow / candle_range > 0.6 and closes[-1] > closes[-2]:
-        return True, "مطرقة 🔨"
-    
-    # 3 شمعات صاعدة متتالية
-    if all(closes[i] > closes[i-1] for i in range(-2, 0)):
-        return True, "صاعد 3 📈"
-    
-    return False, "—"
+    return round(sum(tr_list[-period:]) / period, 3)
 
 def calc_volume(volumes):
     if len(volumes) < 20:
-        return False, 0.0, 0.0
-    avg_20 = sum(volumes[-20:-1]) / 19
-    avg_5 = sum(volumes[-5:]) / 5
-    ratio = volumes[-1] / avg_20 if avg_20 > 0 else 0.0
-    trend = avg_5 / avg_20 if avg_20 > 0 else 1.0
-    return ratio > 1.5, round(ratio, 1), round(trend, 1)
+        return False, False, 0.0
+    avg_5  = sum(volumes[-5:]) / 5 if len(volumes) >= 5 else 0
+    avg_20 = sum(volumes[-20:]) / 20
+    ratio  = avg_5 / avg_20 if avg_20 > 0 else 0.0
+    return ratio >= VOL_SPIKE_HIGH, ratio >= VOL_SPIKE_VERY, round(ratio, 1)
 
-def get_strength(change_pct, rsi, macd, macd_signal, macd_hist,
-                  ma20, ma50, ma200, price, vol_high, vol_ratio,
-                  bullish_candle, tasi_bullish, bb_lower, bb_upper, atr):
-    """نظام نقاط محسّن مع أوزان أكثر منطقية"""
-    score = 0
+# ============================================================
+# 6. السيولة الفنية والانزلاق
+# ============================================================
+
+def calc_liquidity_score(vol_ratio, volumes):
+    """حساب السيولة من 1 إلى 10"""
+    if vol_ratio >= 3:
+        score = 9
+    elif vol_ratio >= 2:
+        score = 8
+    elif vol_ratio >= 1.5:
+        score = 7
+    elif vol_ratio >= 1.2:
+        score = 6
+    elif vol_ratio >= 1.0:
+        score = 5
+    elif vol_ratio >= 0.7:
+        score = 4
+    elif vol_ratio >= 0.5:
+        score = 3
+    else:
+        score = 2
+
+    avg_vol = sum(volumes[-5:]) / 5 if len(volumes) >= 5 else 0
+    if avg_vol > 5_000_000:
+        score = min(score + 1, 10)
+    elif avg_vol < 500_000:
+        score = max(score - 1, 1)
+
+    return score
+
+def calc_slippage(liquidity_score):
+    """الانزلاق حسب السيولة"""
+    if liquidity_score >= 8:
+        return 0.0005, "عالية جداً ✅"
+    elif liquidity_score >= 6:
+        return 0.0015, "عالية 🟡"
+    elif liquidity_score >= 4:
+        return 0.003, "متوسطة ⚠️"
+    else:
+        return 0.005, "منخفضة 🔴"
+
+def calc_entry_price(price, slippage_pct):
+    return round(price * (1 + slippage_pct), 2)
+
+def market_accepts(liquidity_score):
+    return liquidity_score >= 4
+
+# ============================================================
+# 7. نظام النقاط والإشارات
+# ============================================================
+
+def get_strength(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist, macd_dir,
+                 ma20, ma50, price, vol_high, vol_very_high, vol_ratio,
+                 tasi_bullish, bb_lower, bb_upper):
+    score   = 0
     reasons = []
 
-    # === RSI (25 نقطة) ===
+    # RSI (30 نقطة)
     if rsi < 30:
-        score += 25; reasons.append(f"RSI تشبع بيع ({rsi})")
+        score += 30; reasons.append(f"RSI تشبع بيع ({rsi}) 🔥")
     elif rsi < 40:
-        score += 18; reasons.append(f"RSI منطقة شراء ({rsi})")
+        score += 22; reasons.append(f"RSI منطقة شراء ({rsi})")
     elif 40 <= rsi < 55:
-        score += 10; reasons.append(f"RSI متوازن ({rsi})")
-    elif rsi > 70:
-        score -= 10; reasons.append(f"RSI تشبع شراء ({rsi}) ⚠️")
+        score += 12; reasons.append(f"RSI متوازن ({rsi})")
+    elif rsi >= 70:
+        score -= 15; reasons.append(f"⚠️ RSI ذروة شراء ({rsi})")
 
-    # === MACD (20 نقطة) ===
-    if macd > 0 and macd_hist > 0 and macd > macd_signal:
-        score += 20; reasons.append("MACD إشارة شراء قوية")
+    # اتجاه RSI
+    if rsi_dir > 10:
+        score += 8; reasons.append(f"RSI زخم قوي (+{rsi_dir})")
+    elif rsi_dir > 5:
+        score += 4; reasons.append(f"RSI صاعد (+{rsi_dir})")
+    elif rsi_dir < -5:
+        score -= 5; reasons.append(f"RSI نازل ({rsi_dir})")
+
+    # MACD (25 نقطة)
+    if macd > 0 and macd_hist > 0 and macd > macd_signal and macd_dir > 0:
+        score += 25; reasons.append("MACD إشارة شراء قوية 💪")
     elif macd > macd_signal and macd_hist > 0:
-        score += 12; reasons.append("MACD تقاطع صاعد")
+        score += 15; reasons.append("MACD تقاطع صاعد")
     elif macd > 0:
         score += 6
-    elif macd_hist < 0:
-        score -= 5; reasons.append("MACD ضعيف ⚠️")
+    if macd_dir < 0:
+        score -= 8; reasons.append("⚠️ MACD زخم ضعيف")
 
-    # === المتوسطات المتحركة (20 نقطة) ===
-    if ma200 > 0 and price > ma200 > 0:
-        score += 8; reasons.append("فوق MA200")
+    # المتوسطات (20 نقطة) - بدون MA200
     if ma50 > 0 and price > ma50:
-        score += 6; reasons.append("فوق MA50")
+        score += 10; reasons.append("فوق MA50")
     if ma20 > 0 and price > ma20:
-        score += 6; reasons.append("فوق MA20")
+        score += 8; reasons.append("فوق MA20")
     if ma20 > 0 and ma50 > 0 and ma20 > ma50:
-        score += 5; reasons.append("MA20 > MA50 (Golden)")  # bonus
+        score += 7; reasons.append("Golden Cross MA20>MA50 ⭐")
 
-    # === حجم التداول (15 نقطة) ===
-    if vol_high and vol_ratio >= 3:
-        score += 15; reasons.append(f"حجم استثنائي ×{vol_ratio}")
-    elif vol_high and vol_ratio >= 2:
-        score += 10; reasons.append(f"حجم عالٍ ×{vol_ratio}")
+    # الحجم (20 نقطة)
+    if vol_very_high:
+        score += 20; reasons.append(f"حجم استثنائي ×{vol_ratio} 🚀")
     elif vol_high:
-        score += 6; reasons.append(f"حجم مرتفع ×{vol_ratio}")
+        score += 12; reasons.append(f"حجم مرتفع ×{vol_ratio}")
+    elif vol_ratio >= 1.2:
+        score += 6; reasons.append(f"حجم فوق المتوسط ×{vol_ratio}")
 
-    # === نمط الشمعات (10 نقاط) ===
-    if bullish_candle:
-        score += 10; reasons.append("نمط شمعة إيجابي")
-
-    # === TASI (5 نقاط) ===
+    # TASI (5 نقاط)
     if tasi_bullish:
         score += 5; reasons.append("السوق صاعد")
 
-    # === بولينجر (5 نقاط) ===
+    # بولينجر (5 نقاط)
     if bb_lower > 0 and price <= bb_lower * 1.01:
         score += 5; reasons.append("عند الحد الأدنى BB")
     elif bb_upper > 0 and price >= bb_upper * 0.99:
-        score -= 5; reasons.append("عند الحد الأعلى BB ⚠️")
+        score -= 5; reasons.append("⚠️ عند الحد الأعلى BB")
 
     return min(max(score, 0), 100), reasons
 
-def get_signal(score, change_pct, rsi):
-    """إشارة مبنية على Score + فلاتر إضافية"""
-    if score >= 75 and rsi < 70:
+def calc_confidence(score, rsi_dir, macd_dir, vol_high, vol_very_high):
+    """نسبة الثقة من 1 إلى 100%"""
+    strong_signals = 0
+    if rsi_dir > 10: strong_signals += 1
+    if macd_dir > 0: strong_signals += 1
+    if vol_very_high: strong_signals += 1
+    elif vol_high:    strong_signals += 0.5
+
+    if strong_signals >= 3:
+        base = 95
+    elif strong_signals >= 2:
+        base = 75
+    elif strong_signals >= 1:
+        base = 55
+    else:
+        base = 30
+
+    # تعديل بالـ score
+    confidence = base * (score / 100) + base * 0.3
+    return min(round(confidence), 100)
+
+def get_signal(score, rsi, confidence):
+    if score >= 75 and rsi < 70 and confidence >= 60:
         return "BUY 🟢", "strong"
-    elif score >= 60 and rsi < 65:
+    elif score >= 60 and rsi < 65 and confidence >= 45:
         return "BUY 🟢", "normal"
-    elif score < 35 or change_pct < -2 or rsi > 75:
+    elif score < 35 or rsi > 75:
         return "SELL 🔴", "sell"
     else:
         return "WAIT 🟡", "wait"
 
-def calc_targets(price, atr):
-    """
-    حساب الأهداف الثلاثة بالنسب المئوية
-    الهدف 1: محافظ
-    الهدف 2: متوسط
-    الهدف 3: جريء
-    """
-    t1 = round(price * (1 + TARGET_1_PCT / 100), 2)
-    t2 = round(price * (1 + TARGET_2_PCT / 100), 2)
-    t3 = round(price * (1 + TARGET_3_PCT / 100), 2)
-    return t1, t2, t3
+def calc_stars(score):
+    if score >= 80: return "⭐⭐⭐⭐⭐"
+    elif score >= 65: return "⭐⭐⭐⭐"
+    elif score >= 50: return "⭐⭐⭐"
+    elif score >= 35: return "⭐⭐"
+    else: return "⭐"
 
-# ============ تحليل الأسهم ============
-def analyze_stocks(stocks_list, quotes_dict, tasi_bullish):
+# ============================================================
+# 8. حساب الأهداف والـ Stop Loss
+# ============================================================
+
+def calc_targets_and_sl(price, atr, trade_type="daily"):
+    stop_loss = round(price - ATR_MULTIPLIER * atr, 2)
+    if trade_type == "daily":
+        target = round(price * (1 + TARGET_DAILY_PCT / 100), 2)
+    else:
+        target = round(price * (1 + TARGET_MID_PCT / 100), 2)
+    target_atr = round(price + ATR_MULTIPLIER * atr, 2)
+    return target, target_atr, stop_loss
+
+def calc_position_size(capital, price, stop_loss, max_amount):
+    risk_per_share = price - stop_loss
+    if risk_per_share <= 0:
+        return 0, 0
+    shares = int(min(capital, max_amount) / price)
+    amount = shares * price
+    return shares, round(amount, 2)
+
+def calc_market_state(tasi_change_pct, vol_ratio_tasi=1.0):
+    """حالة السوق وكم تستثمر"""
+    if tasi_change_pct > 1.5 and vol_ratio_tasi > 1.5:
+        return "قوي جداً 💪", 250_000, "15-20 ألف ريال"
+    elif tasi_change_pct > 0.5:
+        return "قوي 📈", 200_000, "10-15 ألف ريال"
+    elif tasi_change_pct > -0.5:
+        return "متوسط ➡️", 150_000, "5-8 آلاف ريال"
+    else:
+        return "ضعيف ⚠️", 100_000, "2-4 آلاف ريال"
+
+# ============================================================
+# 9. قاعدة البيانات
+# ============================================================
+
+SIGNALS_COLS = [
+    "signal_id","date","time","symbol","name","signal_type",
+    "price","entry_price","target","stop_loss","confidence",
+    "rsi","macd","volume_ratio","slippage","liquidity_score",
+    "result_24h","result_48h","result_72h","profit_loss"
+]
+
+def init_signals_db():
+    if not os.path.exists(SIGNALS_DB):
+        with open(SIGNALS_DB, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=SIGNALS_COLS)
+            writer.writeheader()
+
+def save_signal(sym, name, signal_type, price, entry_price, target,
+                stop_loss, confidence, rsi, macd, vol_ratio,
+                slippage, liquidity_score):
+    init_signals_db()
+    now = now_riyadh()
+    existing = []
+    try:
+        with open(SIGNALS_DB, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            existing = list(reader)
+    except:
+        pass
+
+    signal_id = len(existing) + 1
+    row = {
+        "signal_id": signal_id,
+        "date": now.strftime("%Y-%m-%d"),
+        "time": now.strftime("%H:%M:%S"),
+        "symbol": sym,
+        "name": name,
+        "signal_type": signal_type,
+        "price": price,
+        "entry_price": entry_price,
+        "target": target,
+        "stop_loss": stop_loss,
+        "confidence": confidence,
+        "rsi": rsi,
+        "macd": macd,
+        "volume_ratio": vol_ratio,
+        "slippage": slippage,
+        "liquidity_score": liquidity_score,
+        "result_24h": "",
+        "result_48h": "",
+        "result_72h": "",
+        "profit_loss": "",
+    }
+    with open(SIGNALS_DB, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=SIGNALS_COLS)
+        writer.writerow(row)
+
+    # إضافة للسجل اليومي في الذاكرة
+    st.session_state.signal_log.append({
+        "الوقت": now.strftime("%H:%M"),
+        "الرمز": sym,
+        "الاسم": name,
+        "الإشارة": signal_type,
+        "السعر": price,
+        "الهدف": target,
+        "Stop Loss": stop_loss,
+        "الثقة": f"{confidence}%",
+    })
+
+def load_today_signals():
+    init_signals_db()
+    today = now_riyadh().strftime("%Y-%m-%d")
+    try:
+        with open(SIGNALS_DB, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            return [r for r in reader if r.get("date") == today]
+    except:
+        return []
+
+def save_daily_report(data):
+    today = now_riyadh().strftime("%Y_%m_%d")
+    path  = os.path.join(DAILY_DIR, f"{today}.csv")
+    if data:
+        df = pd.DataFrame(data)
+        df.to_csv(path, index=False, encoding="utf-8")
+
+# ============================================================
+# 10. تحليل الأسهم
+# ============================================================
+
+def analyze_stocks(stocks_list, quotes_dict, tasi_bullish, trade_type="daily"):
+    now      = now_riyadh()
+    now_mins = now.hour * 60 + now.minute
     data, failed = [], []
+
     for sym, name in stocks_list:
         try:
             q = quotes_dict.get(sym)
-            if not q or not hasattr(q, 'price') or not q.price:
+            if not q or not hasattr(q, "price") or not q.price:
                 failed.append(f"{sym}(لا سعر)")
                 continue
 
@@ -346,96 +603,186 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_bullish):
                 failed.append(f"{sym}(بيانات قليلة)")
                 continue
 
-            price = float(q.price)
-            change_pct = float(getattr(q, 'change_percent', 0) or 0)
+            price      = float(q.price)
+            change_pct = float(getattr(q, "change_percent", 0) or 0)
 
-            rsi = calc_rsi(closes)
+            rsi      = calc_rsi(closes)
+            rsi_dir  = calc_rsi_direction(closes)
             macd, macd_signal, macd_hist = calc_macd(closes)
-            ma20 = calc_ma(closes, 20)
-            ma50 = calc_ma(closes, 50)
-            ma200 = calc_ma(closes, 200)
+            macd_dir = calc_macd_direction(closes)
+            ma20     = calc_ma(closes, 20)
+            ma50     = calc_ma(closes, 50)
             bb_upper, bb_mid, bb_lower = calc_bollinger(closes)
-            atr = calc_atr(highs, lows, closes)
-            bullish, candle_pattern = calc_candles(closes, highs, lows)
-            vol_high, vol_ratio, vol_trend = calc_volume(volumes)
+            atr      = calc_atr(highs, lows, closes)
+            vol_high, vol_very_high, vol_ratio = calc_volume(volumes)
+
+            liq_score = calc_liquidity_score(vol_ratio, volumes)
+            slippage_pct, liq_label = calc_slippage(liq_score)
+            entry_price = calc_entry_price(price, slippage_pct)
+            accepts     = market_accepts(liq_score)
 
             score, reasons = get_strength(
-                change_pct, rsi, macd, macd_signal, macd_hist,
-                ma20, ma50, ma200, price, vol_high, vol_ratio,
-                bullish, tasi_bullish, bb_lower, bb_upper, atr
+                change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist, macd_dir,
+                ma20, ma50, price, vol_high, vol_very_high, vol_ratio,
+                tasi_bullish, bb_lower, bb_upper
             )
 
-            signal, signal_type = get_signal(score, change_pct, rsi)
-            t1, t2, t3 = calc_targets(price, atr)
+            confidence = calc_confidence(score, rsi_dir, macd_dir, vol_high, vol_very_high)
+            signal, signal_type = get_signal(score, rsi, confidence)
+            stars = calc_stars(score)
+
+            target, target_atr, stop_loss = calc_targets_and_sl(price, atr, trade_type)
+            shares, amount = calc_position_size(
+                CAPITAL_DAILY if trade_type == "daily" else CAPITAL_MID,
+                entry_price, stop_loss,
+                MAX_TRADE_DAILY if trade_type == "daily" else MAX_TRADE_MID
+            )
+
+            # RSI تحذير
+            rsi_warning = "🔴 احذر ذروة!" if rsi > 70 else ("🟡 اقترب من الذروة" if rsi > 65 else "")
 
             data.append({
                 "الرمز": sym,
                 "الاسم": name,
                 "السعر": price,
                 "التغيير%": round(change_pct, 2),
+                "النجوم": stars,
+                "الإشارة": signal,
+                "الهدف": target,
+                "Stop Loss": stop_loss,
+                "سعر الدخول": entry_price,
+                "الثقة%": confidence,
                 "RSI": rsi,
+                "RSI اتجاه": rsi_dir,
+                "تحذير RSI": rsi_warning,
                 "MACD": macd,
                 "Hist": macd_hist,
+                "MACD زخم": "صاعد ✅" if macd_dir > 0 else "نازل ⚠️",
                 "MA20": ma20,
                 "MA50": ma50,
-                "MA200": ma200,
                 "ATR": atr,
                 "BB+": bb_upper,
                 "BB-": bb_lower,
                 "حجم×": vol_ratio,
-                "شمعة": candle_pattern,
+                "السيولة": f"{liq_score}/10",
+                "انزلاق": liq_label,
+                "السوق يقبل": "✅ نعم" if accepts else "❌ لا",
+                "الأسهم": shares,
+                "المبلغ": amount,
                 "القوة%": score,
-                "الإشارة": signal,
-                f"هدف1 ({TARGET_1_PCT}%)": t1,
-                f"هدف2 ({TARGET_2_PCT}%)": t2,
-                f"هدف3 ({TARGET_3_PCT}%)": t3,
                 "_reasons": " | ".join(reasons),
                 "_signal_type": signal_type,
+                "_confidence": confidence,
+                "_liq_score": liq_score,
+                "_slippage": slippage_pct,
+                "_entry": entry_price,
+                "_target": target,
+                "_stop": stop_loss,
+                "_rsi": rsi,
+                "_macd": macd,
+                "_vol": vol_ratio,
+                "_sym": sym,
+                "_name": name,
             })
         except Exception as e:
             failed.append(f"{sym}({str(e)[:30]})")
 
     return data, failed
 
-# ============ الواجهة ============
-st.set_page_config(
-    page_title="داشبورد التداول السعودي",
-    layout="wide",
-    page_icon="📊",
-    initial_sidebar_state="collapsed"
-)
-st_autorefresh(interval=60000, key="autorefresh")
+# ============================================================
+# 11. الواجهة - CSS
+# ============================================================
 
 st.markdown("""
 <style>
-    .stMetric label { font-size: 14px !important; }
-    .stDataFrame { font-size: 13px; }
-    .target-box { padding: 8px; border-radius: 6px; text-align: center; font-weight: bold; }
+    .stMetric label { font-size: 13px !important; }
+    .stDataFrame { font-size: 12px; }
+    .signal-card {
+        padding: 14px;
+        border-radius: 12px;
+        margin-bottom: 10px;
+        border: 1px solid #333;
+    }
+    .buy-card  { background: #0d2a0d; border-color: #2d6a2d; }
+    .wait-card { background: #2a2a0d; border-color: #6a6a2d; }
+    .sell-card { background: #2a0d0d; border-color: #6a2d2d; }
+    .metric-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0; }
+    .badge {
+        padding: 2px 8px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: bold;
+    }
+    .badge-green  { background: #1a4a1a; color: #88dd88; }
+    .badge-yellow { background: #4a4a0a; color: #dddd44; }
+    .badge-red    { background: #4a0a0a; color: #dd4444; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 داشبورد التداول السعودي")
+# ============================================================
+# 12. شريط الأدوات العلوي
+# ============================================================
 
-now = datetime.now()
-market_open = 10 <= now.hour < 15
+st_autorefresh(interval=30_000, key="autorefresh")
 
+now      = now_riyadh()
+now_mins = now.hour * 60 + now.minute
+weekday  = now.weekday()  # 0=Monday ... 6=Sunday
+is_workday = weekday < 5  # الأحد=6 في Python، لكن نتحقق لاحقاً
+
+# في pytz: weekday() 0=Monday ... 6=Sunday
+# السوق السعودي: الأحد-الخميس = 6,0,1,2,3
+is_workday_sa = weekday in [6, 0, 1, 2, 3]
+
+market_open    = is_workday_sa and MARKET_OPEN <= now_mins < MARKET_CLOSE
+signals_active = is_workday_sa and now_mins >= MARKET_SIGNALS and now_mins < MARKET_CLOSE
+pre_open       = is_workday_sa and MARKET_PRE_OPEN <= now_mins < MARKET_OPEN
+
+# Circuit Breaker
 market, market_err = get_market()
+tasi_change = 0.0
+tasi_value  = 0.0
 tasi_bullish = False
+
 if market:
     try:
-        tasi_bullish = (getattr(market, 'market_mood', '') == 'Bullish' or
-                        getattr(market, 'advancing', 0) > getattr(market, 'declining', 0))
+        tasi_change  = float(getattr(market, "index_change_percent", 0) or 0)
+        tasi_value   = float(getattr(market, "index_value", 0) or 0)
+        tasi_bullish = (
+            getattr(market, "market_mood", "") == "Bullish" or
+            getattr(market, "advancing", 0) > getattr(market, "declining", 0)
+        )
     except:
         pass
 
-# ============ شريط الحالة ============
-c1, c2, c3, c4 = st.columns(4)
+circuit_break = tasi_change < -3.0
+
+st.title("📊 داشبورد التداول السعودي")
+
+# Paper Mode Banner
+if st.session_state.paper_mode:
+    st.warning("🧪 **وضع المحاكاة** - لا توجد صفقات حقيقية")
+
+if circuit_break:
+    st.error(f"🚨 **Circuit Breaker** - TASI نزل {tasi_change:.2f}% - التداول موقوف!")
+
+if not st.session_state.bot_active:
+    st.error("🛑 **البوت موقوف** - تحتاج تفعيله يدوياً")
+
+# ---- شريط الحالة ----
+c1, c2, c3, c4, c5 = st.columns(5)
+
 with c1:
-    if now.hour < 10:
-        mins = (10 - now.hour) * 60 - now.minute
-        st.warning(f"⏳ يفتح بعد {mins} دقيقة")
-    elif now.hour == 10 and now.minute < 15:
-        st.error(f"⛔ انتظر {15 - now.minute} دقيقة")
+    if not is_workday_sa:
+        st.warning("🔒 عطلة نهاية الأسبوع")
+    elif now_mins < MARKET_PRE_OPEN:
+        st.info(f"⏳ يبدأ سحب البيانات بعد {MARKET_PRE_OPEN - now_mins} دقيقة")
+    elif pre_open:
+        st.warning(f"⏳ السوق يفتح بعد {MARKET_OPEN - now_mins} دقيقة")
+    elif now_mins == MARKET_OPEN or (MARKET_OPEN <= now_mins < MARKET_SIGNALS):
+        st.error(f"⛔ أول 15 دقيقة - انتظر حتى 10:15")
+    elif market_open and signals_active:
+        st.success("✅ السوق مفتوح - الإشارات نشطة")
     elif market_open:
         st.success("✅ السوق مفتوح")
     else:
@@ -444,97 +791,189 @@ with c1:
 with c2:
     if market:
         try:
-            st.metric("TASI", f"{market.index_value:,.0f}", f"{market.index_change_percent:+.2f}%")
+            st.metric("TASI", f"{tasi_value:,.0f}", f"{tasi_change:+.2f}%")
         except:
             st.metric("TASI", "—")
+    else:
+        st.metric("TASI", "—")
 
 with c3:
-    st.metric("هدف 1", f"{TARGET_1_PCT}%", "محافظ")
+    market_state, invest_amount, expected_profit = calc_market_state(tasi_change)
+    st.metric("حالة السوق", market_state)
 
 with c4:
-    st.metric("هدف 2 / 3", f"{TARGET_2_PCT}% / {TARGET_3_PCT}%", "متوسط / جريء")
+    st.metric("توصية الاستثمار", f"{invest_amount:,.0f} ﷼")
 
+with c5:
+    pnl_color = "normal" if st.session_state.daily_pnl >= 0 else "inverse"
+    st.metric("ربح/خسارة اليوم", f"{st.session_state.daily_pnl:+,.0f} ﷼",
+              delta_color=pnl_color)
+
+# ---- إحصاءات السوق ----
 if market:
     try:
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("صاعدة 🟢", getattr(market, 'advancing', '—'))
-        col2.metric("هابطة 🔴", getattr(market, 'declining', '—'))
-        col3.metric("ثابتة", getattr(market, 'unchanged', '—'))
-        col4.metric("مزاج السوق", getattr(market, 'market_mood', '—'))
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("صاعدة 🟢", getattr(market, "advancing", "—"))
+        m2.metric("هابطة 🔴", getattr(market, "declining", "—"))
+        m3.metric("ثابتة ➡️",  getattr(market, "unchanged", "—"))
+        m4.metric("مزاج السوق", getattr(market, "market_mood", "—"))
     except:
         pass
 
 st.divider()
 
-# ============ وضع الدخول ============
-col_mode, col_min = st.columns([2, 3])
-with col_mode:
-    mode = st.radio("وضع الدخول:", ["🛡️ محافظ (60+)", "⚡ جريء (75+)", "🔬 مسح (كل شيء)"],
-                    horizontal=True)
-
-if "محافظ" in mode:
-    min_strength = 60
-elif "جريء" in mode:
-    min_strength = 75
-else:
-    min_strength = 0
-
-if not market_open:
-    min_strength = 0
-
-with col_min:
-    if now.hour == 10 and now.minute < 15:
-        st.warning("⛔ أول 15 دقيقة - تقلبات عالية - ينصح بالانتظار")
-    elif not market_open:
-        st.info("🔒 السوق مغلق - البيانات للمراجعة فقط")
-
-# ============ جلب وتحليل البيانات ============
-with st.spinner("جاري تحليل الأسهم..."):
-    quotes_dict, api_errors = get_all_quotes()
-    data1, failed1 = analyze_stocks(STOCKS_ACTIVE, quotes_dict, tasi_bullish)
-    data2, failed2 = analyze_stocks(STOCKS_SCAN, quotes_dict, tasi_bullish)
-
-total_ok = len(data1) + len(data2)
-total_fail = len(failed1) + len(failed2)
+# ---- أزرار التحكم ----
+ctrl1, ctrl2, ctrl3, ctrl4, ctrl5 = st.columns(5)
+with ctrl1:
+    if st.button("🔄 تحديث يدوي"):
+        st.cache_data.clear()
+        st.rerun()
+with ctrl2:
+    paper_label = "🧪 إيقاف المحاكاة" if st.session_state.paper_mode else "🧪 تفعيل المحاكاة"
+    if st.button(paper_label):
+        st.session_state.paper_mode = not st.session_state.paper_mode
+        st.rerun()
+with ctrl3:
+    bot_label = "🛑 إيقاف البوت" if st.session_state.bot_active else "✅ تفعيل البوت"
+    if st.button(bot_label):
+        st.session_state.bot_active = not st.session_state.bot_active
+        st.rerun()
+with ctrl4:
+    if st.button("💰 خذ أرباح"):
+        st.success("تم تسجيل أخذ الأرباح يدوياً")
+with ctrl5:
+    if st.button("❌ أغلق كل الصفقات"):
+        st.warning("تم إغلاق كل الصفقات يدوياً")
 
 st.caption(
     f"🕐 {now.strftime('%H:%M:%S')} | "
-    f"✅ {total_ok} سهم محلل | "
-    f"❌ {total_fail} مفقود | "
-    f"تحديث الأسعار: 60ث | تحديث المؤشرات: 30د"
+    f"📅 {now.strftime('%Y-%m-%d')} | "
+    f"تحديث الأسعار: 30ث | المؤشرات: 5د"
 )
 
-if failed1 or failed2 or api_errors:
-    with st.expander(f"⚠️ تفاصيل المشاكل ({total_fail} سهم مفقود)"):
-        if api_errors:
-            st.error("أخطاء API: " + str(api_errors))
-        if failed1:
-            st.write("النشطة المفقودة:", failed1)
-        if failed2:
-            st.write("المسح المفقودة:", failed2)
+# ============================================================
+# 13. جلب وتحليل البيانات
+# ============================================================
 
-st.divider()
+with st.spinner("جاري تحليل الأسهم..."):
+    quotes_dict, api_errors = get_all_quotes()
+    data1, failed1 = analyze_stocks(STOCKS_ACTIVE, quotes_dict, tasi_bullish, "daily")
+    data2, failed2 = analyze_stocks(STOCKS_SCAN,   quotes_dict, tasi_bullish, "daily")
 
-# ============ دالة عرض الجدول ============
+total_ok   = len(data1) + len(data2)
+total_fail = len(failed1) + len(failed2)
+
+if api_errors or failed1 or failed2:
+    with st.expander(f"⚠️ مشاكل ({total_fail} سهم مفقود)"):
+        if api_errors: st.error("أخطاء API: " + str(api_errors))
+        if failed1: st.write("النشطة:", failed1)
+        if failed2: st.write("المسح:", failed2)
+
+# ============================================================
+# 14. دالة عرض البطاقة
+# ============================================================
+
+def render_stock_card(row, key_suffix=""):
+    sig_type = row.get("_signal_type", "wait")
+    card_class = {"strong": "buy-card", "normal": "buy-card",
+                  "sell": "sell-card", "wait": "wait-card"}.get(sig_type, "wait-card")
+
+    rsi_warn = row.get("تحذير RSI", "")
+
+    st.markdown(f"""
+    <div class='signal-card {card_class}'>
+        <div style='display:flex;justify-content:space-between;align-items:center'>
+            <h4 style='margin:0'>{row['الرمز']} - {row['الاسم']}</h4>
+            <span style='font-size:20px'>{row['النجوم']}</span>
+        </div>
+        <div class='metric-row'>
+            <span class='badge badge-{"green" if sig_type in ["strong","normal"] else "red" if sig_type=="sell" else "yellow"}'>
+                {row['الإشارة']}
+            </span>
+            <span class='badge badge-green'>ثقة {row['الثقة%']}%</span>
+            <span class='badge badge-yellow'>سيولة {row['السيولة']}</span>
+            <span class='badge badge-{"green" if "✅" in row.get("السوق يقبل","") else "red"}'>
+                {row['السوق يقبل']}
+            </span>
+        </div>
+        <div style='margin-top:8px;font-size:13px'>
+            💰 السعر: <b>{row['السعر']}</b> &nbsp;|&nbsp;
+            🎯 الهدف: <b>{row['الهدف']}</b> &nbsp;|&nbsp;
+            🛑 Stop: <b>{row['Stop Loss']}</b><br>
+            📥 سعر الدخول: <b>{row['سعر الدخول']}</b> ({row['انزلاق']})<br>
+            📊 RSI: <b>{row['RSI']}</b> {rsi_warn} &nbsp;|&nbsp; MACD: <b>{row['MACD']}</b> {row['MACD زخم']}<br>
+            📦 الكمية المقترحة: <b>{row['الأسهم']} سهم</b> = <b>{row['المبلغ']:,.0f} ﷼</b>
+        </div>
+        <details><summary style='cursor:pointer;margin-top:6px;font-size:11px;color:#aaa'>أسباب الإشارة</summary>
+        <p style='font-size:11px;color:#ccc;margin:4px 0'>{row['_reasons']}</p></details>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # أزرار
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        if st.button(f"ادخل الآن 🚀", key=f"enter_{row['الرمز']}_{key_suffix}"):
+            st.session_state[f"calc_{row['الرمز']}"] = True
+    with col_b:
+        if st.button(f"اطلع 📤", key=f"exit_{row['الرمز']}_{key_suffix}"):
+            if row["السعر"] > row["الهدف"]:
+                profit = (row["السعر"] - row["الهدف"]) * row["الأسهم"]
+                st.success(f"ربح تقريبي: {profit:,.0f} ﷼")
+            else:
+                loss = (row["الهدف"] - row["السعر"]) * row["الأسهم"]
+                st.error(f"خسارة تقريبية: {loss:,.0f} ﷼")
+    with col_c:
+        if st.button(f"احسب 🧮", key=f"calc_btn_{row['الرمز']}_{key_suffix}"):
+            st.session_state[f"show_calc_{row['الرمز']}"] = True
+
+    if st.session_state.get(f"calc_{row['الرمز']}"):
+        amount_in = st.number_input(
+            "أدخل المبلغ (ريال):", min_value=1000, max_value=200000,
+            value=20000, key=f"amt_{row['الرمز']}_{key_suffix}"
+        )
+        qty = int(amount_in / row["سعر الدخول"])
+        profit_potential = qty * (row["الهدف"] - row["سعر الدخول"])
+        loss_potential   = qty * (row["سعر الدخول"] - row["Stop Loss"])
+        st.info(f"الكمية: {qty} سهم | ربح متوقع: {profit_potential:,.0f} ﷼ | خسارة محتملة: {loss_potential:,.0f} ﷼")
+
+        if st.button("✅ تأكيد الدخول", key=f"confirm_{row['الرمز']}_{key_suffix}"):
+            save_signal(
+                row["_sym"], row["_name"], row["الإشارة"],
+                row["السعر"], row["_entry"], row["_target"], row["_stop"],
+                row["_confidence"], row["_rsi"], row["_macd"], row["_vol"],
+                row["_slippage"], row["_liq_score"]
+            )
+            st.success("✅ تم تسجيل الصفقة!")
+            st.session_state[f"calc_{row['الرمز']}"] = False
+
+# ============================================================
+# 15. دالة عرض الجدول
+# ============================================================
+
 def render_table(data_list, key_prefix):
     if not data_list:
         st.warning("لا توجد بيانات")
         return
 
     df = pd.DataFrame(data_list)
-
-    # إخفاء الأعمدة الداخلية
-    display_cols = [c for c in df.columns if not c.startswith("_")]
+    display_cols = [
+        "الرمز","الاسم","السعر","التغيير%",
+        "النجوم","الإشارة","الهدف","Stop Loss",
+        "سعر الدخول","الثقة%","RSI","تحذير RSI",
+        "MACD زخم","حجم×","السيولة","القوة%"
+    ]
+    display_cols = [c for c in display_cols if c in df.columns]
     df_display = df[display_cols].copy()
 
-    # فلتر الإشارة
-    col_f1, col_f2, col_f3 = st.columns(3)
+    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
     with col_f1:
         show_buy = st.checkbox("BUY فقط 🟢", key=f"{key_prefix}_buy")
     with col_f2:
-        show_strong = st.checkbox("قوة 75%+ فقط", key=f"{key_prefix}_strong")
+        show_strong = st.checkbox("ثقة 75%+ فقط", key=f"{key_prefix}_strong")
     with col_f3:
-        sort_by = st.selectbox("ترتيب حسب:", ["القوة%", "RSI", "التغيير%", "حجم×"],
+        hide_rsi = st.checkbox("إخفاء RSI ذروة", key=f"{key_prefix}_rsi")
+    with col_f4:
+        sort_by = st.selectbox("ترتيب:", ["القوة%","الثقة%","RSI","التغيير%","حجم×"],
                                key=f"{key_prefix}_sort")
 
     df_display = df_display.sort_values(sort_by, ascending=(sort_by == "RSI"))
@@ -542,30 +981,42 @@ def render_table(data_list, key_prefix):
     if show_buy:
         df_display = df_display[df_display["الإشارة"] == "BUY 🟢"]
     if show_strong:
-        df_display = df_display[df_display["القوة%"] >= 75]
-    
+        df_display = df_display[df_display["الثقة%"] >= 75]
+    if hide_rsi and "تحذير RSI" in df_display.columns:
+        df_display = df_display[df_display["تحذير RSI"] == ""]
+
     st.dataframe(
         df_display,
         use_container_width=True,
-        height=500,
+        height=450,
         column_config={
-            "القوة%": st.column_config.ProgressColumn("القوة%", min_value=0, max_value=100),
-            "RSI": st.column_config.NumberColumn("RSI", format="%.1f"),
+            "القوة%":  st.column_config.ProgressColumn("القوة%",  min_value=0, max_value=100),
+            "الثقة%":  st.column_config.ProgressColumn("الثقة%",  min_value=0, max_value=100),
+            "RSI":     st.column_config.NumberColumn("RSI",     format="%.1f"),
             "التغيير%": st.column_config.NumberColumn("التغيير%", format="%.2f%%"),
         }
     )
 
-    buy_df = df_display[df_display["الإشارة"] == "BUY 🟢"]
+    buy_df = df[df["الإشارة"] == "BUY 🟢"]
     if not buy_df.empty:
-        symbols = buy_df["الرمز"].tolist()
-        st.success(f"🔔 إشارات BUY ({len(symbols)}): {', '.join(symbols[:8])}" +
-                   (" وأخرى..." if len(symbols) > 8 else ""))
+        syms = buy_df["الرمز"].tolist()
+        st.success(f"🔔 BUY ({len(syms)}): {', '.join(syms[:8])}" +
+                   (" وأخرى..." if len(syms) > 8 else ""))
 
-# ============ التابات ============
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📈 حركة السوق", "⚡ الأسهم النشطة", "🔍 المسح الشامل", "🌅 أفضل الفرص"
+# ============================================================
+# 16. التابات
+# ============================================================
+
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "📈 السوق",
+    "🌅 صفقات اليوم",
+    "⚡ الأسهم النشطة",
+    "🔍 المسح الشامل",
+    "⭐ أفضل الفرص",
+    "📋 سجل اليوم",
 ])
 
+# ---- تاب 1: حركة السوق ----
 with tab1:
     st.subheader("📈 حركة السوق اليوم")
     g, l, v, movers_err = get_movers()
@@ -576,94 +1027,183 @@ with tab1:
     with col1:
         st.markdown("**🟢 أعلى الصاعدين**")
         try:
-            gdf = pd.DataFrame([{
-                "الرمز": x.symbol, "الاسم": x.name,
-                "السعر": x.price, "التغيير%": x.change_percent
-            } for x in g.movers])
+            gdf = pd.DataFrame([{"الرمز": x.symbol, "الاسم": x.name,
+                                  "السعر": x.price, "التغيير%": x.change_percent}
+                                 for x in g.movers])
             st.dataframe(gdf, use_container_width=True)
         except:
             st.info("لا توجد بيانات")
-
     with col2:
         st.markdown("**🔴 أكثر الهابطين**")
         try:
-            ldf = pd.DataFrame([{
-                "الرمز": x.symbol, "الاسم": x.name,
-                "السعر": x.price, "التغيير%": x.change_percent
-            } for x in l.movers])
+            ldf = pd.DataFrame([{"الرمز": x.symbol, "الاسم": x.name,
+                                  "السعر": x.price, "التغيير%": x.change_percent}
+                                 for x in l.movers])
             st.dataframe(ldf, use_container_width=True)
         except:
             st.info("لا توجد بيانات")
-
     with col3:
         st.markdown("**💹 الأكثر تداولاً**")
         try:
-            vdf = pd.DataFrame([{
-                "الرمز": x.symbol, "الاسم": x.name,
-                "السعر": x.price, "الحجم": x.volume
-            } for x in v.movers])
+            vdf = pd.DataFrame([{"الرمز": x.symbol, "الاسم": x.name,
+                                  "السعر": x.price, "الحجم": x.volume}
+                                 for x in v.movers])
             st.dataframe(vdf, use_container_width=True)
         except:
             st.info("لا توجد بيانات")
 
-with tab2:
-    st.subheader("⚡ الأسهم النشطة (50 سهم)")
-    render_table(data1, "active")
-
-with tab3:
-    st.subheader("🔍 المسح الشامل (80 سهم)")
-    render_table(data2, "scan")
-
-with tab4:
-    st.subheader("🌅 أفضل الفرص - ملخص شامل")
-    all_data = data1 + data2
-
-    if all_data:
-        df_all = pd.DataFrame(all_data)
-        df_buy = df_all[df_all["الإشارة"] == "BUY 🟢"].sort_values("القوة%", ascending=False)
-
-        if not df_buy.empty:
-            st.markdown("### ⭐ أقوى إشارات الشراء")
-
-            # بطاقات للأفضل 3
-            top3 = df_buy.head(3)
-            cols = st.columns(3)
-            for i, (_, row) in enumerate(top3.iterrows()):
-                with cols[i]:
-                    st.markdown(f"""
-                    <div style='background:#1a3a1a;padding:12px;border-radius:10px;border:1px solid #2d6a2d'>
-                    <h4 style='color:#4CAF50;margin:0'>{row['الرمز']} - {row['الاسم']}</h4>
-                    <p style='margin:4px 0'>💰 السعر: <b>{row['السعر']}</b></p>
-                    <p style='margin:4px 0'>📊 القوة: <b>{row['القوة%']}%</b></p>
-                    <p style='margin:4px 0'>📈 RSI: {row['RSI']}</p>
-                    <hr style='border-color:#2d6a2d'>
-                    <p style='margin:4px 0;color:#88dd88'>🎯 هدف 1 ({TARGET_1_PCT}%): <b>{row[f'هدف1 ({TARGET_1_PCT}%)']}</b></p>
-                    <p style='margin:4px 0;color:#ffcc44'>🎯 هدف 2 ({TARGET_2_PCT}%): <b>{row[f'هدف2 ({TARGET_2_PCT}%)']}</b></p>
-                    <p style='margin:4px 0;color:#ff8844'>🎯 هدف 3 ({TARGET_3_PCT}%): <b>{row[f'هدف3 ({TARGET_3_PCT}%)']}</b></p>
-                    <p style='margin:4px 0;font-size:11px;color:#aaa'>{row['_reasons'][:80]}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-            st.divider()
-            st.markdown("### 📋 جميع إشارات BUY")
-            target_cols = [c for c in df_buy.columns if not c.startswith("_")]
-            st.dataframe(
-                df_buy[target_cols].head(20),
-                use_container_width=True,
-                column_config={
-                    "القوة%": st.column_config.ProgressColumn("القوة%", min_value=0, max_value=100),
-                }
-            )
+    # ملخص السوق
+    st.divider()
+    ms1, ms2, ms3 = st.columns(3)
+    with ms1:
+        st.info(f"**حالة السوق:** {market_state}")
+        st.info(f"**مبلغ الاستثمار المناسب:** {invest_amount:,.0f} ﷼")
+    with ms2:
+        st.info(f"**الأرباح المتوقعة:** {expected_profit}")
+    with ms3:
+        if tasi_change < -3:
+            st.error("🚨 السوق ضعيف جداً - الإشارات خطرة!")
+        elif tasi_change < 0:
+            st.warning("⚠️ السوق في هبوط")
         else:
-            st.info("لا توجد إشارات BUY بالمعايير الحالية")
+            st.success("✅ السوق إيجابي")
+
+# ---- تاب 2: صفقات اليوم ----
+with tab2:
+    if not signals_active:
+        st.warning("⏳ الإشارات تبدأ من 10:15 صباحاً فقط")
+        if not market_open:
+            st.info("السوق مغلق - البيانات أدناه للمراجعة فقط")
+
+    all_data = data1 + data2
+    df_all   = pd.DataFrame(all_data) if all_data else pd.DataFrame()
+
+    if not df_all.empty:
+        df_buy = df_all[df_all["الإشارة"] == "BUY 🟢"].sort_values("الثقة%", ascending=False)
+
+        # ---- قسم: صفقات اليوم (هدف 0.5%) ----
+        st.subheader("🌅 صفقات اليوم - هدف 0.5%")
+        st.caption("تركز على الحجم والزخم الصباحي - للتداول السريع")
+
+        df_today = df_buy[
+            (df_all["حجم×"] >= 1.2) &
+            (df_all["الثقة%"] >= 45)
+        ].head(6) if not df_buy.empty else pd.DataFrame()
+
+        if not df_today.empty:
+            cols_today = st.columns(min(3, len(df_today)))
+            for idx, (_, row) in enumerate(df_today.iterrows()):
+                with cols_today[idx % 3]:
+                    render_stock_card(row.to_dict(), key_suffix=f"today_{idx}")
+        else:
+            st.info("لا توجد صفقات يوم مناسبة حالياً")
+
+        st.divider()
+
+        # ---- قسم: صفقات الغد (هدف 2%) ----
+        st.subheader("🌙 صفقات الغد - هدف 2%")
+        st.caption("أسهم في وضع جيد للتحرك غداً")
+
+        df_tmr = df_buy[
+            (df_buy["القوة%"] >= 60) &
+            (df_buy["RSI"].between(30, 60))
+        ].head(6) if not df_buy.empty else pd.DataFrame()
+
+        if not df_tmr.empty:
+            cols_tmr = st.columns(min(3, len(df_tmr)))
+            for idx, (_, row) in enumerate(df_tmr.iterrows()):
+                with cols_tmr[idx % 3]:
+                    render_stock_card(row.to_dict(), key_suffix=f"tmr_{idx}")
+        else:
+            st.info("لا توجد صفقات غد مناسبة حالياً")
     else:
         st.warning("لا توجد بيانات")
 
+# ---- تاب 3: الأسهم النشطة ----
+with tab3:
+    st.subheader(f"⚡ الأسهم النشطة ({len(STOCKS_ACTIVE)} سهم)")
+    render_table(data1, "active")
+
+# ---- تاب 4: المسح الشامل ----
+with tab4:
+    st.subheader(f"🔍 المسح الشامل ({len(STOCKS_SCAN)} سهم)")
+    render_table(data2, "scan")
+
+# ---- تاب 5: أفضل الفرص ----
+with tab5:
+    st.subheader("⭐ أفضل الفرص - ملخص شامل")
+    all_data = data1 + data2
+
+    if all_data:
+        df_all  = pd.DataFrame(all_data)
+        df_best = df_all[df_all["الإشارة"] == "BUY 🟢"].sort_values("الثقة%", ascending=False)
+
+        if not df_best.empty:
+            # أقوى 3 فرص
+            st.markdown("### 🏆 أقوى 3 فرص")
+            top3 = df_best.head(3)
+            cols = st.columns(3)
+            for i, (_, row) in enumerate(top3.iterrows()):
+                with cols[i]:
+                    render_stock_card(row.to_dict(), key_suffix=f"best_{i}")
+
+            st.divider()
+            st.markdown("### 📋 جميع إشارات BUY")
+
+            show_cols = [
+                "الرمز","الاسم","السعر","التغيير%","النجوم",
+                "الإشارة","الهدف","Stop Loss","سعر الدخول",
+                "الثقة%","RSI","تحذير RSI","حجم×","السيولة","القوة%"
+            ]
+            show_cols = [c for c in show_cols if c in df_best.columns]
+            st.dataframe(
+                df_best[show_cols].head(20),
+                use_container_width=True,
+                column_config={
+                    "القوة%": st.column_config.ProgressColumn("القوة%", min_value=0, max_value=100),
+                    "الثقة%": st.column_config.ProgressColumn("الثقة%", min_value=0, max_value=100),
+                }
+            )
+        else:
+            st.info("لا توجد إشارات BUY حالياً")
+    else:
+        st.warning("لا توجد بيانات")
+
+# ---- تاب 6: سجل اليوم ----
+with tab6:
+    st.subheader("📋 سجل إشارات اليوم")
+
+    # السجل من الذاكرة
+    if st.session_state.signal_log:
+        df_log = pd.DataFrame(st.session_state.signal_log)
+        st.dataframe(df_log, use_container_width=True)
+    else:
+        st.info("لم تُسجَّل أي إشارات اليوم بعد")
+
+    # السجل من قاعدة البيانات
+    st.divider()
+    st.subheader("📂 سجل قاعدة البيانات")
+    today_signals = load_today_signals()
+    if today_signals:
+        df_db = pd.DataFrame(today_signals)
+        st.dataframe(df_db, use_container_width=True)
+
+        # إحصاءات
+        total_sigs = len(today_signals)
+        buy_sigs   = len([s for s in today_signals if "BUY" in s.get("signal_type","")])
+        st.metric("إجمالي الإشارات اليوم", total_sigs)
+        st.metric("إشارات BUY", buy_sigs)
+    else:
+        st.info("لا توجد سجلات في قاعدة البيانات لهذا اليوم")
+
+    # حفظ التقرير اليومي
+    if now_mins >= REPORT_TIME and all_data:
+        save_daily_report(all_data)
+        st.caption("✅ تم حفظ تقرير اليوم تلقائياً")
+
+# ---- Daily Loss Stop ----
+if abs(st.session_state.daily_pnl) >= DAILY_LOSS_STOP and st.session_state.daily_pnl < 0:
+    st.error(f"🚨 وصلت لحد الخسارة اليومية ({DAILY_LOSS_STOP:,.0f} ﷼) - توقف التداول!")
+
 st.divider()
-col_r1, col_r2 = st.columns([1, 4])
-with col_r1:
-    if st.button("تحديث يدوي 🔄"):
-        st.cache_data.clear()
-        st.rerun()
-with col_r2:
-    st.caption("⚠️ هذه الأداة للمعلومات فقط وليست توصية استثمارية")
+st.caption("⚠️ هذه الأداة للمعلومات فقط وليست توصية استثمارية - التداول على مسؤوليتك الشخصية")
