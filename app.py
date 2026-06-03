@@ -607,10 +607,6 @@ def load_today_signals():
             "SELECT * FROM signals WHERE date=? ORDER BY signal_id", (today,)
         ).fetchall()
     return [dict(r) for r in rows]
-        "الهدف": target,
-        "Stop Loss": stop_loss,
-        "الثقة": f"{confidence}%",
-    })
 
 def eval_end_of_day(quotes_dict):
     """
