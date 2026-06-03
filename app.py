@@ -422,24 +422,29 @@ def get_strength(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist, macd_di
     return min(max(score, 0), 100), reasons
 
 def calc_confidence(score, rsi_dir, macd_dir, vol_high, vol_very_high):
-    """نسبة الثقة من 1 إلى 100%"""
-    strong_signals = 0
-    if rsi_dir > 10: strong_signals += 1
-    if macd_dir > 0: strong_signals += 1
-    if vol_very_high: strong_signals += 1
-    elif vol_high:    strong_signals += 0.5
+    """
+    نسبة الثقة من 0 إلى 100%
+    - الـ score هو الأساس (يمثل 70% من الثقة)
+    - الإشارات القوية تضيف مكافأة (30% من الثقة)
+    - لو الـ score صفر، الثقة صفر بغض النظر عن الإشارات
+    """
+    if score <= 0:
+        return 0
 
-    if strong_signals >= 3:
-        base = 95
-    elif strong_signals >= 2:
-        base = 75
-    elif strong_signals >= 1:
-        base = 55
-    else:
-        base = 30
+    # مكافأة الإشارات القوية (أقصاها 30 نقطة)
+    bonus = 0
+    if rsi_dir > 10:   bonus += 12
+    elif rsi_dir > 5:  bonus += 6
+    if macd_dir > 0:   bonus += 10
+    if vol_very_high:  bonus += 8
+    elif vol_high:     bonus += 4
 
-    # تعديل بالـ score
-    confidence = base * (score / 100) + base * 0.3
+    # الثقة = (score × 0.70) + bonus
+    # score يمثل 70% والمكافأة أقصاها 30%
+    confidence = (score * 0.70) + bonus
+
+    # حد أدنى 10% إذا كان score > 0
+    confidence = max(confidence, 10)
     return min(round(confidence), 100)
 
 def get_signal(score, rsi, confidence):
@@ -505,8 +510,12 @@ def calc_market_state(tasi_change_pct, vol_ratio_tasi=1.0):
         return "ضعيف ⚠️", 100_000, "2-4 آلاف ريال"
 
 # ============================================================
-# 9. قاعدة البيانات
+# 9. قاعدة البيانات — SQLite (بدل CSV لضمان استمرارية البيانات)
 # ============================================================
+
+import sqlite3
+
+SIGNALS_DB_SQLITE = os.path.join(DATA_DIR, "signals.db")
 
 SIGNALS_COLS = [
     "signal_id","date","time","symbol","name","signal_type",
@@ -515,53 +524,70 @@ SIGNALS_COLS = [
     "result_24h","result_48h","result_72h","profit_loss"
 ]
 
+def get_db_conn():
+    conn = sqlite3.connect(SIGNALS_DB_SQLITE, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
 def init_signals_db():
-    if not os.path.exists(SIGNALS_DB):
-        with open(SIGNALS_DB, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=SIGNALS_COLS)
-            writer.writeheader()
+    with get_db_conn() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS signals (
+                signal_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+                date          TEXT,
+                time          TEXT,
+                symbol        TEXT,
+                name          TEXT,
+                signal_type   TEXT,
+                price         REAL,
+                entry_price   REAL,
+                target        REAL,
+                stop_loss     REAL,
+                confidence    REAL,
+                rsi           REAL,
+                macd          REAL,
+                volume_ratio  REAL,
+                slippage      REAL,
+                liquidity_score REAL,
+                result_24h    TEXT DEFAULT '',
+                result_48h    TEXT DEFAULT '',
+                result_72h    TEXT DEFAULT '',
+                profit_loss   TEXT DEFAULT ''
+            )
+        """)
+        conn.commit()
+
+init_signals_db()
+
+def signal_already_saved_today(sym):
+    """تحقق من قاعدة البيانات مباشرة — لا يعتمد على الذاكرة المؤقتة"""
+    today = now_riyadh().strftime("%Y-%m-%d")
+    with get_db_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM signals WHERE symbol=? AND date=? LIMIT 1",
+            (sym, today)
+        ).fetchone()
+    return row is not None
 
 def save_signal(sym, name, signal_type, price, entry_price, target,
                 stop_loss, confidence, rsi, macd, vol_ratio,
                 slippage, liquidity_score):
-    init_signals_db()
     now = now_riyadh()
-    existing = []
-    try:
-        with open(SIGNALS_DB, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            existing = list(reader)
-    except:
-        pass
+    with get_db_conn() as conn:
+        conn.execute("""
+            INSERT INTO signals
+            (date,time,symbol,name,signal_type,price,entry_price,target,
+             stop_loss,confidence,rsi,macd,volume_ratio,slippage,liquidity_score,
+             result_24h,result_48h,result_72h,profit_loss)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'','','','')
+        """, (
+            now.strftime("%Y-%m-%d"), now.strftime("%H:%M:%S"),
+            sym, name, signal_type, price, entry_price, target,
+            stop_loss, confidence, rsi, macd, vol_ratio, slippage, liquidity_score
+        ))
+        conn.commit()
 
-    signal_id = len(existing) + 1
-    row = {
-        "signal_id": signal_id,
-        "date": now.strftime("%Y-%m-%d"),
-        "time": now.strftime("%H:%M:%S"),
-        "symbol": sym,
-        "name": name,
-        "signal_type": signal_type,
-        "price": price,
-        "entry_price": entry_price,
-        "target": target,
-        "stop_loss": stop_loss,
-        "confidence": confidence,
-        "rsi": rsi,
-        "macd": macd,
-        "volume_ratio": vol_ratio,
-        "slippage": slippage,
-        "liquidity_score": liquidity_score,
-        "result_24h": "",
-        "result_48h": "",
-        "result_72h": "",
-        "profit_loss": "",
-    }
-    with open(SIGNALS_DB, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=SIGNALS_COLS)
-        writer.writerow(row)
-
-    # إضافة للسجل اليومي في الذاكرة
+    # إضافة للسجل اليومي في الذاكرة (للعرض الفوري فقط)
     st.session_state.signal_log.append({
         "الوقت": now.strftime("%H:%M"),
         "الرمز": sym,
@@ -576,64 +602,60 @@ def save_signal(sym, name, signal_type, price, entry_price, target,
 def load_today_signals():
     init_signals_db()
     today = now_riyadh().strftime("%Y-%m-%d")
-    try:
-        with open(SIGNALS_DB, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            return [r for r in reader if r.get("date") == today]
-    except:
-        return []
+    with get_db_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM signals WHERE date=? ORDER BY signal_id", (today,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+        "الهدف": target,
+        "Stop Loss": stop_loss,
+        "الثقة": f"{confidence}%",
+    })
 
 def eval_end_of_day(quotes_dict):
     """
     بنهاية اليوم (بعد 15:00) يفحص كل إشارة BUY سُجلت اليوم
-    ويحسب هل وصلت للهدف أم لا
+    ويحسب هل وصلت للهدف أم لا — بناءً على أعلى وأدنى سعر خلال اليوم
     """
     today = now_riyadh().strftime("%Y-%m-%d")
-    if not os.path.exists(SIGNALS_DB):
-        return
-
     try:
-        rows = []
-        with open(SIGNALS_DB, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
+        with get_db_conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM signals WHERE date=? AND result_24h=''", (today,)
+            ).fetchall()
 
-        updated = False
-        for row in rows:
-            if row.get("date") != today:
-                continue
-            if row.get("result_24h") != "":
-                continue  # مقيّم مسبقاً
+            for row in rows:
+                row = dict(row)
+                sym = row.get("symbol")
+                q   = quotes_dict.get(sym)
+                if not q:
+                    continue
 
-            sym = row.get("symbol")
-            q   = quotes_dict.get(sym)
-            if not q:
-                continue
+                current_price = float(getattr(q, "price", 0) or 0)
+                intraday_high = float(getattr(q, "high", 0) or current_price)
+                intraday_low  = float(getattr(q, "low",  0) or current_price)
+                target        = float(row.get("target", 0) or 0)
+                stop_loss     = float(row.get("stop_loss", 0) or 0)
+                entry_price   = float(row.get("entry_price", 0) or 0)
 
-            current_price = float(getattr(q, "price", 0) or 0)
-            target        = float(row.get("target", 0) or 0)
-            stop_loss     = float(row.get("stop_loss", 0) or 0)
-            entry_price   = float(row.get("entry_price", 0) or 0)
+                if intraday_high >= target:
+                    profit = round((target - entry_price) / entry_price * 100, 2)
+                    result = "✅ وصل الهدف"
+                    pl     = f"+{profit}%"
+                elif intraday_low <= stop_loss:
+                    loss   = round((entry_price - stop_loss) / entry_price * 100, 2)
+                    result = "❌ وصل Stop Loss"
+                    pl     = f"-{loss}%"
+                else:
+                    change = round((current_price - entry_price) / entry_price * 100, 2)
+                    result = "⏳ لم يصل بعد"
+                    pl     = f"{change:+.2f}%"
 
-            if current_price >= target:
-                profit = round((current_price - entry_price) * 100 / entry_price, 2)
-                row["result_24h"]  = "✅ وصل الهدف"
-                row["profit_loss"] = f"+{profit}%"
-            elif current_price <= stop_loss:
-                loss = round((entry_price - current_price) * 100 / entry_price, 2)
-                row["result_24h"]  = "❌ وصل Stop Loss"
-                row["profit_loss"] = f"-{loss}%"
-            else:
-                change = round((current_price - entry_price) * 100 / entry_price, 2)
-                row["result_24h"]  = "⏳ لم يصل بعد"
-                row["profit_loss"] = f"{change:+.2f}%"
-            updated = True
-
-        if updated:
-            with open(SIGNALS_DB, "w", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=SIGNALS_COLS)
-                writer.writeheader()
-                writer.writerows(rows)
+                conn.execute(
+                    "UPDATE signals SET result_24h=?, profit_loss=? WHERE signal_id=?",
+                    (result, pl, row["signal_id"])
+                )
+            conn.commit()
     except Exception as e:
         pass
 
@@ -712,22 +734,13 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_bullish, trade_type="daily"):
 
             # ====== تسجيل تلقائي لكل إشارة BUY ======
             if signal_type in ["strong", "normal"] and signals_active:
-                today = now_riyadh().strftime("%Y-%m-%d")
-                # تحقق ما سُجلت قبل كذا (مرة واحدة في اليوم لكل سهم)
-                already_saved = any(
-                    s.get("symbol") == sym and s.get("date") == today
-                    for s in st.session_state.get("_auto_saved", [])
-                )
-                if not already_saved:
+                if not signal_already_saved_today(sym):
                     save_signal(
                         sym, name, signal,
                         price, entry_price, target, stop_loss,
                         confidence, rsi, macd, vol_ratio,
                         slippage_pct, liq_score
                     )
-                    if "_auto_saved" not in st.session_state:
-                        st.session_state["_auto_saved"] = []
-                    st.session_state["_auto_saved"].append({"symbol": sym, "date": today})
 
             data.append({
                 "الرمز": sym,
@@ -1457,44 +1470,42 @@ with tab7:
     with report_tab3:
         st.markdown("### 📈 الأداء الكلي")
 
-        if os.path.exists(SIGNALS_DB):
-            try:
-                df_all_signals = pd.read_csv(SIGNALS_DB, encoding="utf-8")
+        try:
+            with get_db_conn() as conn:
+                df_all_signals = pd.read_sql_query("SELECT * FROM signals ORDER BY signal_id DESC", conn)
 
-                if not df_all_signals.empty:
-                    total_all  = len(df_all_signals)
-                    buy_all    = len(df_all_signals[df_all_signals["signal_type"].str.contains("BUY", na=False)])
-                    completed  = df_all_signals[df_all_signals["result_24h"] != ""]
-                    success    = len(completed[completed["profit_loss"].astype(str).str.startswith("+")])
+            if not df_all_signals.empty:
+                total_all = len(df_all_signals)
+                buy_all   = len(df_all_signals[df_all_signals["signal_type"].str.contains("BUY", na=False)])
+                completed = df_all_signals[df_all_signals["result_24h"] != ""]
+                success   = len(completed[completed["profit_loss"].astype(str).str.startswith("+")])
 
-                    p1, p2, p3, p4 = st.columns(4)
-                    p1.metric("إجمالي الإشارات", total_all)
-                    p2.metric("إشارات BUY", buy_all)
-                    p3.metric("مكتملة (24h)", len(completed))
-                    p4.metric("ناجحة", success)
+                p1, p2, p3, p4 = st.columns(4)
+                p1.metric("إجمالي الإشارات", total_all)
+                p2.metric("إشارات BUY", buy_all)
+                p3.metric("مكتملة (24h)", len(completed))
+                p4.metric("ناجحة", success)
 
-                    if len(completed) > 0:
-                        success_rate = round(success / len(completed) * 100, 1)
-                        st.metric("نسبة النجاح", f"{success_rate}%")
+                if len(completed) > 0:
+                    success_rate = round(success / len(completed) * 100, 1)
+                    st.metric("نسبة النجاح", f"{success_rate}%")
 
-                        if success_rate >= 75:
-                            st.success(f"🎯 نسبة النجاح {success_rate}% - ممتاز!")
-                        elif success_rate >= 60:
-                            st.warning(f"📊 نسبة النجاح {success_rate}% - جيد")
-                        else:
-                            st.error(f"⚠️ نسبة النجاح {success_rate}% - تحتاج مراجعة")
+                    if success_rate >= 75:
+                        st.success(f"🎯 نسبة النجاح {success_rate}% - ممتاز!")
+                    elif success_rate >= 60:
+                        st.warning(f"📊 نسبة النجاح {success_rate}% - جيد")
+                    else:
+                        st.error(f"⚠️ نسبة النجاح {success_rate}% - تحتاج مراجعة")
 
-                    st.divider()
-                    st.dataframe(df_all_signals.tail(50), use_container_width=True)
+                st.divider()
+                st.dataframe(df_all_signals.head(50), use_container_width=True)
 
-                    csv_all = df_all_signals.to_csv(index=False).encode("utf-8")
-                    st.download_button("⬇️ تحميل كل الإشارات", csv_all, "all_signals.csv", "text/csv")
-                else:
-                    st.info("قاعدة البيانات فارغة — ابدأ التداول لتظهر الإحصاءات")
-            except:
-                st.info("لا توجد بيانات بعد")
-        else:
-            st.info("لا توجد بيانات بعد — ستظهر بعد أول إشارة مسجلة")
+                csv_all = df_all_signals.to_csv(index=False).encode("utf-8")
+                st.download_button("⬇️ تحميل كل الإشارات", csv_all, "all_signals.csv", "text/csv")
+            else:
+                st.info("قاعدة البيانات فارغة — ابدأ التداول لتظهر الإحصاءات")
+        except Exception as e:
+            st.info(f"لا توجد بيانات بعد — ستظهر بعد أول إشارة مسجلة")
 
 st.divider()
 st.caption("⚠️ هذه الأداة للمعلومات فقط وليست توصية استثمارية - التداول على مسؤوليتك الشخصية")
