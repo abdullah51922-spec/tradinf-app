@@ -1,5 +1,9 @@
 streamlit
 streamlit-autorefresh
 pandas
+numpy
+requests
+pytz
+scikit-learn
+plotly
 sahmk
-python-dotenv
