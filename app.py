@@ -463,14 +463,27 @@ def calc_stars(score):
 # 8. حساب الأهداف والـ Stop Loss
 # ============================================================
 
-def calc_targets_and_sl(price, atr, trade_type="daily"):
-    stop_loss = round(price - ATR_MULTIPLIER * atr, 2)
-    if trade_type == "daily":
-        target = round(price * (1 + TARGET_DAILY_PCT / 100), 2)
+def calc_targets_and_sl(price, atr, confidence=50, trade_type="daily"):
+    """
+    الهدف بناءً على توقع النموذج (ATR × معامل حسب قوة الإشارة)
+    ثقة 80%+   → ATR × 2.0
+    ثقة 60-80% → ATR × 1.5
+    ثقة أقل   → ATR × 1.0
+    """
+    if confidence >= 80:
+        atr_mult    = 2.0
+        model_label = "توقع قوي 🔥"
+    elif confidence >= 60:
+        atr_mult    = 1.5
+        model_label = "توقع متوسط 📊"
     else:
-        target = round(price * (1 + TARGET_MID_PCT / 100), 2)
-    target_atr = round(price + ATR_MULTIPLIER * atr, 2)
-    return target, target_atr, stop_loss
+        atr_mult    = 1.0
+        model_label = "توقع محافظ 🛡️"
+
+    stop_loss  = round(price - ATR_MULTIPLIER * atr, 2)
+    target     = round(price + atr_mult * atr, 2)
+    target_pct = round((target - price) / price * 100, 2) if price > 0 else 0
+    return target, stop_loss, target_pct, model_label
 
 def calc_position_size(capital, price, stop_loss, max_amount):
     risk_per_share = price - stop_loss
@@ -626,7 +639,7 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_bullish, trade_type="daily"):
             signal, signal_type = get_signal(score, rsi, confidence)
             stars = calc_stars(score)
 
-            target, target_atr, stop_loss = calc_targets_and_sl(price, atr, trade_type)
+            target, stop_loss, target_pct, model_label = calc_targets_and_sl(price, atr, confidence, trade_type)
             shares, amount = calc_position_size(
                 CAPITAL_DAILY if trade_type == "daily" else CAPITAL_MID,
                 entry_price, stop_loss,
@@ -644,6 +657,8 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_bullish, trade_type="daily"):
                 "النجوم": stars,
                 "الإشارة": signal,
                 "الهدف": target,
+                "هدف%": f"+{target_pct}%",
+                "توقع النموذج": model_label,
                 "Stop Loss": stop_loss,
                 "سعر الدخول": entry_price,
                 "الثقة%": confidence,
@@ -948,8 +963,10 @@ def render_stock_card(row, key_suffix=""):
         </div>
         <div style='margin-top:10px;font-size:13px;color:#222;line-height:1.8'>
             💰 <b>السعر:</b> {row['السعر']} &nbsp;|&nbsp;
-            🎯 <b>الهدف:</b> {row['الهدف']} &nbsp;|&nbsp;
+            🎯 <b>الهدف:</b> {row['الهدف']} &nbsp;
+            <span style='color:#2e7d32;font-weight:bold'>({row.get('هدف%','')})</span> &nbsp;|&nbsp;
             🛑 <b>Stop:</b> {row['Stop Loss']}<br>
+            🤖 <b>توقع النموذج:</b> {row.get('توقع النموذج','—')}<br>
             📥 <b>سعر الدخول:</b> {row['سعر الدخول']} &nbsp;({row['انزلاق']})<br>
             📊 <b>RSI:</b> {row['RSI']} {rsi_warn} &nbsp;|&nbsp;
             📈 <b>MACD:</b> {row['MACD']} {row['MACD زخم']}<br>
@@ -1060,13 +1077,14 @@ def render_table(data_list, key_prefix):
 # 16. التابات
 # ============================================================
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📈 السوق",
     "🌅 صفقات اليوم",
     "⚡ الأسهم النشطة",
     "🔍 المسح الشامل",
     "⭐ أفضل الفرص",
     "📋 سجل اليوم",
+    "📊 التقارير",
 ])
 
 # ---- تاب 1: حركة السوق ----
@@ -1257,6 +1275,134 @@ with tab6:
 # ---- Daily Loss Stop ----
 if abs(st.session_state.daily_pnl) >= DAILY_LOSS_STOP and st.session_state.daily_pnl < 0:
     st.error(f"🚨 وصلت لحد الخسارة اليومية ({DAILY_LOSS_STOP:,.0f} ﷼) - توقف التداول!")
+
+# ---- تاب 7: التقارير ----
+with tab7:
+    st.subheader("📊 التقارير والإحصاءات")
+
+    report_tab1, report_tab2, report_tab3 = st.tabs([
+        "📅 تقرير اليوم", "📆 تقرير الأسبوع", "📈 الأداء الكلي"
+    ])
+
+    # ---- تقرير اليوم ----
+    with report_tab1:
+        st.markdown("### 📅 تقرير اليوم")
+        today_signals = load_today_signals()
+
+        if today_signals:
+            df_today = pd.DataFrame(today_signals)
+            total  = len(today_signals)
+            buys   = len([s for s in today_signals if "BUY"  in s.get("signal_type","")])
+            sells  = len([s for s in today_signals if "SELL" in s.get("signal_type","")])
+            waits  = len([s for s in today_signals if "WAIT" in s.get("signal_type","")])
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("إجمالي الإشارات", total)
+            c2.metric("إشارات BUY 🟢",  buys)
+            c3.metric("إشارات SELL 🔴", sells)
+            c4.metric("إشارات WAIT 🟡", waits)
+
+            st.divider()
+            st.dataframe(df_today, use_container_width=True)
+
+            # تحميل التقرير
+            csv = df_today.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "⬇️ تحميل تقرير اليوم CSV",
+                csv,
+                f"report_{now.strftime('%Y_%m_%d')}.csv",
+                "text/csv"
+            )
+        else:
+            st.info("لا توجد إشارات مسجلة اليوم")
+
+        # حفظ تلقائي
+        if now_mins >= REPORT_TIME and all_data:
+            save_daily_report(all_data)
+            st.success("✅ تم حفظ تقرير اليوم تلقائياً")
+
+    # ---- تقرير الأسبوع ----
+    with report_tab2:
+        st.markdown("### 📆 تقرير الأسبوع")
+
+        # قراءة كل التقارير اليومية من آخر 7 أيام
+        weekly_data = []
+        for i in range(7):
+            day = now_riyadh() - timedelta(days=i)
+            path = os.path.join(DAILY_DIR, f"{day.strftime('%Y_%m_%d')}.csv")
+            if os.path.exists(path):
+                try:
+                    df_day = pd.read_csv(path)
+                    df_day["التاريخ"] = day.strftime("%Y-%m-%d")
+                    weekly_data.append(df_day)
+                except:
+                    pass
+
+        if weekly_data:
+            df_week = pd.concat(weekly_data, ignore_index=True)
+            st.success(f"✅ بيانات {len(weekly_data)} أيام")
+
+            # إحصاءات الأسبوع
+            if "الإشارة" in df_week.columns:
+                buy_week  = len(df_week[df_week["الإشارة"] == "BUY 🟢"])
+                sell_week = len(df_week[df_week["الإشارة"] == "SELL 🔴"])
+                wait_week = len(df_week[df_week["الإشارة"] == "WAIT 🟡"])
+
+                w1, w2, w3 = st.columns(3)
+                w1.metric("BUY هذا الأسبوع",  buy_week)
+                w2.metric("SELL هذا الأسبوع", sell_week)
+                w3.metric("WAIT هذا الأسبوع", wait_week)
+
+            st.divider()
+            st.dataframe(df_week, use_container_width=True)
+
+            csv_week = df_week.to_csv(index=False).encode("utf-8")
+            st.download_button("⬇️ تحميل تقرير الأسبوع", csv_week, "weekly_report.csv", "text/csv")
+        else:
+            st.info("لا توجد تقارير أسبوعية بعد — ستظهر بعد أول يوم تداول")
+
+    # ---- الأداء الكلي ----
+    with report_tab3:
+        st.markdown("### 📈 الأداء الكلي")
+
+        if os.path.exists(SIGNALS_DB):
+            try:
+                df_all_signals = pd.read_csv(SIGNALS_DB, encoding="utf-8")
+
+                if not df_all_signals.empty:
+                    total_all  = len(df_all_signals)
+                    buy_all    = len(df_all_signals[df_all_signals["signal_type"].str.contains("BUY", na=False)])
+                    completed  = df_all_signals[df_all_signals["result_24h"] != ""]
+                    success    = len(completed[completed["profit_loss"].astype(str).str.startswith("+")])
+
+                    p1, p2, p3, p4 = st.columns(4)
+                    p1.metric("إجمالي الإشارات", total_all)
+                    p2.metric("إشارات BUY", buy_all)
+                    p3.metric("مكتملة (24h)", len(completed))
+                    p4.metric("ناجحة", success)
+
+                    if len(completed) > 0:
+                        success_rate = round(success / len(completed) * 100, 1)
+                        st.metric("نسبة النجاح", f"{success_rate}%")
+
+                        if success_rate >= 75:
+                            st.success(f"🎯 نسبة النجاح {success_rate}% - ممتاز!")
+                        elif success_rate >= 60:
+                            st.warning(f"📊 نسبة النجاح {success_rate}% - جيد")
+                        else:
+                            st.error(f"⚠️ نسبة النجاح {success_rate}% - تحتاج مراجعة")
+
+                    st.divider()
+                    st.dataframe(df_all_signals.tail(50), use_container_width=True)
+
+                    csv_all = df_all_signals.to_csv(index=False).encode("utf-8")
+                    st.download_button("⬇️ تحميل كل الإشارات", csv_all, "all_signals.csv", "text/csv")
+                else:
+                    st.info("قاعدة البيانات فارغة — ابدأ التداول لتظهر الإحصاءات")
+            except:
+                st.info("لا توجد بيانات بعد")
+        else:
+            st.info("لا توجد بيانات بعد — ستظهر بعد أول إشارة مسجلة")
 
 st.divider()
 st.caption("⚠️ هذه الأداة للمعلومات فقط وليست توصية استثمارية - التداول على مسؤوليتك الشخصية")
