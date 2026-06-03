@@ -583,6 +583,60 @@ def load_today_signals():
     except:
         return []
 
+def eval_end_of_day(quotes_dict):
+    """
+    بنهاية اليوم (بعد 15:00) يفحص كل إشارة BUY سُجلت اليوم
+    ويحسب هل وصلت للهدف أم لا
+    """
+    today = now_riyadh().strftime("%Y-%m-%d")
+    if not os.path.exists(SIGNALS_DB):
+        return
+
+    try:
+        rows = []
+        with open(SIGNALS_DB, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        updated = False
+        for row in rows:
+            if row.get("date") != today:
+                continue
+            if row.get("result_24h") != "":
+                continue  # مقيّم مسبقاً
+
+            sym = row.get("symbol")
+            q   = quotes_dict.get(sym)
+            if not q:
+                continue
+
+            current_price = float(getattr(q, "price", 0) or 0)
+            target        = float(row.get("target", 0) or 0)
+            stop_loss     = float(row.get("stop_loss", 0) or 0)
+            entry_price   = float(row.get("entry_price", 0) or 0)
+
+            if current_price >= target:
+                profit = round((current_price - entry_price) * 100 / entry_price, 2)
+                row["result_24h"]  = "✅ وصل الهدف"
+                row["profit_loss"] = f"+{profit}%"
+            elif current_price <= stop_loss:
+                loss = round((entry_price - current_price) * 100 / entry_price, 2)
+                row["result_24h"]  = "❌ وصل Stop Loss"
+                row["profit_loss"] = f"-{loss}%"
+            else:
+                change = round((current_price - entry_price) * 100 / entry_price, 2)
+                row["result_24h"]  = "⏳ لم يصل بعد"
+                row["profit_loss"] = f"{change:+.2f}%"
+            updated = True
+
+        if updated:
+            with open(SIGNALS_DB, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=SIGNALS_COLS)
+                writer.writeheader()
+                writer.writerows(rows)
+    except Exception as e:
+        pass
+
 def save_daily_report(data):
     today = now_riyadh().strftime("%Y_%m_%d")
     path  = os.path.join(DAILY_DIR, f"{today}.csv")
@@ -648,6 +702,25 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_bullish, trade_type="daily"):
 
             # RSI تحذير
             rsi_warning = "🔴 احذر ذروة!" if rsi > 70 else ("🟡 اقترب من الذروة" if rsi > 65 else "")
+
+            # ====== تسجيل تلقائي لكل إشارة BUY ======
+            if signal_type in ["strong", "normal"] and signals_active:
+                today = now_riyadh().strftime("%Y-%m-%d")
+                # تحقق ما سُجلت قبل كذا (مرة واحدة في اليوم لكل سهم)
+                already_saved = any(
+                    s.get("symbol") == sym and s.get("date") == today
+                    for s in st.session_state.get("_auto_saved", [])
+                )
+                if not already_saved:
+                    save_signal(
+                        sym, name, signal,
+                        price, entry_price, target, stop_loss,
+                        confidence, rsi, macd, vol_ratio,
+                        slippage_pct, liq_score
+                    )
+                    if "_auto_saved" not in st.session_state:
+                        st.session_state["_auto_saved"] = []
+                    st.session_state["_auto_saved"].append({"symbol": sym, "date": today})
 
             data.append({
                 "الرمز": sym,
@@ -1316,10 +1389,11 @@ with tab7:
         else:
             st.info("لا توجد إشارات مسجلة اليوم")
 
-        # حفظ تلقائي
-        if now_mins >= REPORT_TIME and all_data:
-            save_daily_report(all_data)
-            st.success("✅ تم حفظ تقرير اليوم تلقائياً")
+    # حفظ التقرير اليومي + تقييم نهاية اليوم
+    if now_mins >= REPORT_TIME and all_data:
+        save_daily_report(all_data)
+        eval_end_of_day(quotes_dict)
+        st.success("✅ تم حفظ تقرير اليوم وتقييم الإشارات تلقائياً")
 
     # ---- تقرير الأسبوع ----
     with report_tab2:
