@@ -1,3 +1,14 @@
+if "auth" not in st.session_state:
+    st.session_state.auth = False
+if not st.session_state.auth:
+    pwd = st.text_input("كلمة المرور", type="password")
+    if st.button("دخول"):
+        if pwd == "Theapp1994":
+            st.session_state.auth = True
+            st.rerun()
+        else:
+            st.error("خاطئة")
+    st.stop()
 # ============ المتطلبات: pip install streamlit streamlit-autorefresh pandas python-dotenv sahmk ============
 
 import streamlit as st
