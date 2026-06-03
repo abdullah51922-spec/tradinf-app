@@ -695,27 +695,82 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_bullish, trade_type="daily"):
 
 st.markdown("""
 <style>
-    .stMetric label { font-size: 13px !important; }
+    /* ثيم فاتح نظيف */
+    .stApp { background-color: #f5f6fa; }
+
+    .stMetric label { font-size: 13px !important; color: #444; }
+    .stMetric [data-testid="stMetricValue"] { color: #111; font-weight: 700; }
     .stDataFrame { font-size: 12px; }
+
+    /* البطاقات */
     .signal-card {
-        padding: 14px;
-        border-radius: 12px;
-        margin-bottom: 10px;
-        border: 1px solid #333;
+        padding: 16px;
+        border-radius: 14px;
+        margin-bottom: 12px;
+        border: 1.5px solid #dde1ea;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+        background: #ffffff;
     }
-    .buy-card  { background: #0d2a0d; border-color: #2d6a2d; }
-    .wait-card { background: #2a2a0d; border-color: #6a6a2d; }
-    .sell-card { background: #2a0d0d; border-color: #6a2d2d; }
-    .metric-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0; }
+    .buy-card  {
+        background: #f0faf2;
+        border-color: #4caf50;
+        border-left: 5px solid #4caf50;
+    }
+    .wait-card {
+        background: #fffdf0;
+        border-color: #f0b429;
+        border-left: 5px solid #f0b429;
+    }
+    .sell-card {
+        background: #fff5f5;
+        border-color: #e53935;
+        border-left: 5px solid #e53935;
+    }
+
+    /* النصوص داخل البطاقات */
+    .signal-card h4 { color: #1a1a2e; margin: 0 0 6px 0; font-size: 15px; }
+    .signal-card p  { color: #333; font-size: 13px; margin: 3px 0; }
+
+    /* الـ badges */
+    .metric-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
     .badge {
-        padding: 2px 8px;
+        padding: 3px 10px;
         border-radius: 20px;
         font-size: 11px;
-        font-weight: bold;
+        font-weight: 700;
     }
-    .badge-green  { background: #1a4a1a; color: #88dd88; }
-    .badge-yellow { background: #4a4a0a; color: #dddd44; }
-    .badge-red    { background: #4a0a0a; color: #dd4444; }
+    .badge-green  { background: #e6f4ea; color: #2e7d32; border: 1px solid #a5d6a7; }
+    .badge-yellow { background: #fff8e1; color: #f57f17; border: 1px solid #ffe082; }
+    .badge-red    { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; }
+    .badge-blue   { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; }
+
+    /* الأزرار */
+    .stButton > button {
+        border-radius: 8px;
+        font-weight: 600;
+        border: 1.5px solid #dde1ea;
+        background: #ffffff;
+        color: #1a1a2e;
+        transition: all 0.2s;
+    }
+    .stButton > button:hover {
+        background: #f0f4ff;
+        border-color: #4c6ef5;
+        color: #4c6ef5;
+    }
+
+    /* الـ tabs */
+    .stTabs [data-baseweb="tab"] {
+        font-weight: 600;
+        color: #555;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #4c6ef5 !important;
+        border-bottom: 2px solid #4c6ef5;
+    }
+
+    details summary { color: #666; font-size: 12px; cursor: pointer; }
+    details p { color: #555; font-size: 11px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -880,32 +935,35 @@ def render_stock_card(row, key_suffix=""):
 
     rsi_warn = row.get("تحذير RSI", "")
 
+    sig_badge = "green" if sig_type in ["strong","normal"] else "red" if sig_type=="sell" else "yellow"
+    liq_badge = "green" if row.get("_liq_score",0) >= 7 else "yellow" if row.get("_liq_score",0) >= 4 else "red"
+    mkt_badge = "green" if "✅" in row.get("السوق يقبل","") else "red"
+
     st.markdown(f"""
     <div class='signal-card {card_class}'>
         <div style='display:flex;justify-content:space-between;align-items:center'>
-            <h4 style='margin:0'>{row['الرمز']} - {row['الاسم']}</h4>
-            <span style='font-size:20px'>{row['النجوم']}</span>
+            <h4>{row['الرمز']} — {row['الاسم']}</h4>
+            <span style='font-size:22px'>{row['النجوم']}</span>
         </div>
         <div class='metric-row'>
-            <span class='badge badge-{"green" if sig_type in ["strong","normal"] else "red" if sig_type=="sell" else "yellow"}'>
-                {row['الإشارة']}
-            </span>
-            <span class='badge badge-green'>ثقة {row['الثقة%']}%</span>
-            <span class='badge badge-yellow'>سيولة {row['السيولة']}</span>
-            <span class='badge badge-{"green" if "✅" in row.get("السوق يقبل","") else "red"}'>
-                {row['السوق يقبل']}
-            </span>
+            <span class='badge badge-{sig_badge}'>{row['الإشارة']}</span>
+            <span class='badge badge-blue'>ثقة {row['الثقة%']}%</span>
+            <span class='badge badge-{liq_badge}'>سيولة {row['السيولة']}</span>
+            <span class='badge badge-{mkt_badge}'>{row['السوق يقبل']}</span>
         </div>
-        <div style='margin-top:8px;font-size:13px'>
-            💰 السعر: <b>{row['السعر']}</b> &nbsp;|&nbsp;
-            🎯 الهدف: <b>{row['الهدف']}</b> &nbsp;|&nbsp;
-            🛑 Stop: <b>{row['Stop Loss']}</b><br>
-            📥 سعر الدخول: <b>{row['سعر الدخول']}</b> ({row['انزلاق']})<br>
-            📊 RSI: <b>{row['RSI']}</b> {rsi_warn} &nbsp;|&nbsp; MACD: <b>{row['MACD']}</b> {row['MACD زخم']}<br>
-            📦 الكمية المقترحة: <b>{row['الأسهم']} سهم</b> = <b>{row['المبلغ']:,.0f} ﷼</b>
+        <div style='margin-top:10px;font-size:13px;color:#222;line-height:1.8'>
+            💰 <b>السعر:</b> {row['السعر']} &nbsp;|&nbsp;
+            🎯 <b>الهدف:</b> {row['الهدف']} &nbsp;|&nbsp;
+            🛑 <b>Stop:</b> {row['Stop Loss']}<br>
+            📥 <b>سعر الدخول:</b> {row['سعر الدخول']} &nbsp;({row['انزلاق']})<br>
+            📊 <b>RSI:</b> {row['RSI']} {rsi_warn} &nbsp;|&nbsp;
+            📈 <b>MACD:</b> {row['MACD']} {row['MACD زخم']}<br>
+            📦 <b>الكمية:</b> {row['الأسهم']} سهم &nbsp;=&nbsp; <b>{row['المبلغ']:,.0f} ﷼</b>
         </div>
-        <details><summary style='cursor:pointer;margin-top:6px;font-size:11px;color:#aaa'>أسباب الإشارة</summary>
-        <p style='font-size:11px;color:#ccc;margin:4px 0'>{row['_reasons']}</p></details>
+        <details style='margin-top:8px'>
+            <summary>أسباب الإشارة 🔍</summary>
+            <p style='margin:6px 0'>{row['_reasons']}</p>
+        </details>
     </div>
     """, unsafe_allow_html=True)
 
