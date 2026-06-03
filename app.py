@@ -642,7 +642,14 @@ def save_daily_report(data):
     path  = os.path.join(DAILY_DIR, f"{today}.csv")
     if data:
         df = pd.DataFrame(data)
-        df.to_csv(path, index=False, encoding="utf-8")
+        clean_cols = [
+            "الرمز","الاسم","السعر","التغيير%","النجوم","الإشارة",
+            "الهدف","هدف%","توقع النموذج","Stop Loss","سعر الدخول",
+            "الثقة%","RSI","تحذير RSI","MACD زخم","حجم×",
+            "السيولة","انزلاق","السوق يقبل","الأسهم","المبلغ","القوة%"
+        ]
+        clean_cols = [c for c in clean_cols if c in df.columns]
+        df[clean_cols].to_csv(path, index=False, encoding="utf-8-sig")
 
 # ============================================================
 # 10. تحليل الأسهم
@@ -1414,7 +1421,17 @@ with tab7:
 
         if weekly_data:
             df_week = pd.concat(weekly_data, ignore_index=True)
-            st.success(f"✅ بيانات {len(weekly_data)} أيام")
+
+            # أعمدة واضحة فقط
+            clean_cols = [
+                "التاريخ","الرمز","الاسم","السعر","التغيير%",
+                "النجوم","الإشارة","الهدف","هدف%","توقع النموذج",
+                "Stop Loss","الثقة%","RSI","حجم×","القوة%"
+            ]
+            clean_cols = [c for c in clean_cols if c in df_week.columns]
+            df_week_clean = df_week[clean_cols]
+
+            st.success(f"✅ بيانات {len(weekly_data)} أيام | {len(df_week)} سهم")
 
             # إحصاءات الأسبوع
             if "الإشارة" in df_week.columns:
@@ -1428,10 +1445,11 @@ with tab7:
                 w3.metric("WAIT هذا الأسبوع", wait_week)
 
             st.divider()
-            st.dataframe(df_week, use_container_width=True)
+            st.dataframe(df_week_clean, use_container_width=True)
 
-            csv_week = df_week.to_csv(index=False).encode("utf-8")
-            st.download_button("⬇️ تحميل تقرير الأسبوع", csv_week, "weekly_report.csv", "text/csv")
+            # utf-8-sig لقراءة صحيحة في Excel
+            csv_week = df_week_clean.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+            st.download_button("⬇️ تحميل تقرير الأسبوع Excel", csv_week, "weekly_report.csv", "text/csv")
         else:
             st.info("لا توجد تقارير أسبوعية بعد — ستظهر بعد أول يوم تداول")
 
