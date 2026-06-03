@@ -1,3 +1,12 @@
+
+# ============ المتطلبات: pip install streamlit streamlit-autorefresh pandas python-dotenv sahmk ============
+
+import streamlit as st
+from streamlit_autorefresh import st_autorefresh
+import pandas as pd
+from datetime import datetime
+# ============ تحميل المفاتيح من .env (أمان) ============
+API_KEY = st.secrets["API_KEY"]
 if "auth" not in st.session_state:
     st.session_state.auth = False
 if not st.session_state.auth:
@@ -9,14 +18,6 @@ if not st.session_state.auth:
         else:
             st.error("خاطئة")
     st.stop()
-# ============ المتطلبات: pip install streamlit streamlit-autorefresh pandas python-dotenv sahmk ============
-
-import streamlit as st
-from streamlit_autorefresh import st_autorefresh
-import pandas as pd
-from datetime import datetime
-# ============ تحميل المفاتيح من .env (أمان) ============
-API_KEY = st.secrets["API_KEY"]
 
 try:
     from sahmk import SahmkClient
