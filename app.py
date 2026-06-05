@@ -1535,7 +1535,7 @@ with tab_backtest:
     - يحلل: متوسط وقت تحقيق كل هدف، نسبة النجاح، R/R الفعلي
     """)
 
-    def backtest_one_stock_v12(sym, name, n_days=20):
+    def backtest_one_stock_v12(sym, name, n_days=20, skip_down=False):
         try:
             closes, highs, lows, volumes = get_historical(sym)
             if len(closes) < n_days + 50:
@@ -1548,6 +1548,12 @@ with tab_backtest:
 
                 price      = closes[i-1]
                 change_pct = (closes[i-1] - closes[i-2]) / closes[i-2] * 100 if i > 1 else 0
+
+                # فلتر: تجاهل لو السهم هابط في آخر 3 أيام (بديل عن TASI التاريخي)
+                if skip_down and i >= 4:
+                    avg_3day_chg = (closes[i-1] - closes[i-4]) / closes[i-4] * 100
+                    if avg_3day_chg < -2.0:  # هابط أكثر من 2% في 3 أيام
+                        continue
 
                 rsi      = calc_rsi(c)
                 rsi_dir  = calc_rsi_direction(c)
@@ -1631,26 +1637,29 @@ with tab_backtest:
         except:
             return []
 
-    def run_backtest_v12(stocks_list, n_days=20):
+    def run_backtest_v12(stocks_list, n_days=20, skip_down=False):
         all_results = []
         prog = st.progress(0)
         stat = st.empty()
         total = len(stocks_list)
         for i, (sym, name) in enumerate(stocks_list):
             stat.text(f"اختبار {i+1}/{total}: {sym} — {name}")
-            results = backtest_one_stock_v12(sym, name, n_days)
+            results = backtest_one_stock_v12(sym, name, n_days, skip_down)
             all_results.extend(results)
             prog.progress((i+1)/total)
         prog.empty(); stat.empty()
         return all_results
 
-    col_bt1, col_bt2, col_bt3 = st.columns(3)
+    col_bt1, col_bt2, col_bt3, col_bt4 = st.columns(4)
     with col_bt1:
         bt_days = st.slider("عدد أيام الاختبار:", 5, 20, 20)
     with col_bt2:
         bt_scope = st.selectbox("النطاق:", ["أسهم سريعة (50 سهم)", "كل الأسهم (~214)"])
     with col_bt3:
         bt_filter = st.selectbox("فلتر:", ["BUY فقط", "كل الإشارات"])
+    with col_bt4:
+        bt_skip_down = st.checkbox("تجاهل أيام السهم هابط", value=True,
+            help="يتجاهل الإشارات في الأيام اللي كان فيها السهم نفسه هابط خلال 3 أيام سابقة")
 
     run_bt = st.button("🚀 ابدأ اختبار الاستراتيجية", type="primary")
 
@@ -1662,7 +1671,7 @@ with tab_backtest:
             stocks_to_test = UNIQUE_STOCKS
 
         with st.spinner(f"جاري اختبار {len(stocks_to_test)} سهم على آخر {bt_days} يوم..."):
-            bt_results = run_backtest_v12(stocks_to_test, bt_days)
+            bt_results = run_backtest_v12(stocks_to_test, bt_days, bt_skip_down)
 
         if not bt_results:
             st.error("❌ لم تُنتج أي نتائج — تحقق من البيانات")
@@ -1693,6 +1702,10 @@ with tab_backtest:
 
             st.divider()
             st.markdown("### 📊 نتائج اختبار الاستراتيجية")
+            if bt_skip_down:
+                st.info("🔍 الفلتر مفعّل: تم تجاهل الإشارات في أيام كان السهم هابطاً أكثر من 2% خلال 3 أيام سابقة")
+            else:
+                st.warning("⚠️ الفلتر مُعطَّل: النتائج تشمل أيام السوق الهابط — فعّل 'تجاهل أيام السهم هابط' للحصول على نتيجة أدق")
             m1,m2,m3,m4 = st.columns(4)
             m1.metric("إجمالي الإشارات", total_sig)
             m2.metric("ناجحة", int(won_bt))
