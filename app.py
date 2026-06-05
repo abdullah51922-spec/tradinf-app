@@ -10,6 +10,7 @@ import sqlite3, os, io
 from datetime import datetime, timedelta
 import pytz
 
+GROUP_TITLE = "المجموعة 1 — كبار السوق"
 RIYADH_TZ = pytz.timezone("Asia/Riyadh")
 
 def now_riyadh():
@@ -1143,21 +1144,21 @@ st.markdown("""
 
 /* ── شريط TASI ── */
 .tasi-bar {
-    background:#fff; border-radius:12px;
-    padding:12px 20px; margin-bottom:14px;
+    background:#fff; border-radius:14px;
+    padding:16px 24px; margin-bottom:16px;
     box-shadow:0 1px 4px rgba(0,0,0,0.06);
     display:flex; gap:28px; flex-wrap:wrap; align-items:center;
 }
 .tasi-item { text-align:center; }
-.tasi-label { font-size:11px; color:#888; margin-bottom:2px; }
-.tasi-val { font-size:18px; font-weight:700; color:#111; }
+.tasi-label { font-size:12px; color:#888; margin-bottom:4px; font-weight:500; }
+.tasi-val { font-size:22px; font-weight:800; color:#111; }
 .tasi-sub { font-size:11px; color:#666; }
 
 /* ── شريط التحديث ── */
 .upd-bar {
     background:#1e3a5f; color:#e8f0fb;
-    border-radius:10px; padding:7px 16px;
-    font-size:12px; display:flex;
+    border-radius:12px; padding:10px 20px;
+    font-size:13px; display:flex;
     align-items:center; gap:10px; flex-wrap:wrap;
     margin-bottom:14px;
 }
@@ -1216,6 +1217,18 @@ if after_close and all_data:
 # 12. الهيدر الرئيسي
 # ============================================================
 
+
+# ── عنوان الداشبورد ──
+st.markdown(f"""
+<div style='padding:20px 0 8px'>
+  <h1 style='margin:0;font-size:28px;font-weight:800;color:#111;line-height:1.2'>
+    📊 داشبورد — {GROUP_TITLE}
+  </h1>
+  <p style='margin:4px 0 0;font-size:13px;color:#888'>
+    السوق السعودي — تاسي &nbsp;|&nbsp; {now.strftime("%A %d %B %Y")}
+  </p>
+</div>
+""", unsafe_allow_html=True)
 
 # ── شريط التحديث ──
 last_upd  = st.session_state.last_scan_time or "لم يبدأ بعد"
@@ -1354,41 +1367,7 @@ if all_data:
         cols = st.columns(min(3, len(top3)))
         for i, (_, row) in enumerate(top3.iterrows()):
             with cols[i]:
-                r = row.to_dict()
-                sig_type = r.get("_signal_type","wait")
-                is_bo    = r.get("_is_bo", False)
-                is_intra = r.get("_is_intraday", False)
-                card_cls = ("strong-card" if sig_type=="strong" else
-                            "intraday-card" if is_intra else
-                            "breakout-card" if is_bo else "buy-card")
-                liq_b = "green" if r.get("_liq_score",0)>=7 else "yellow" if r.get("_liq_score",0)>=4 else "red"
-                st.markdown(f"""
-                <div class='signal-card {card_cls}'>
-                    <div style='display:flex;justify-content:space-between'>
-                        <b>{r['الرمز']} — {r['الاسم']}</b>
-                        <span>{r['النجوم']}</span>
-                    </div>
-                    <div class='metric-row'>
-                        <span class='badge badge-green'>{r['الإشارة']}</span>
-                        <span class='badge badge-blue'>ثقة {r['الثقة%']}%</span>
-                        <span class='badge badge-{liq_b}'>سيولة {r['السيولة']}</span>
-                        {"<span class='badge badge-purple'>📡 Intraday</span>" if is_intra else "<span class='badge badge-yellow'>📅 يومي</span>"}
-                        {"<span class='badge badge-yellow'>🚨 Breakout</span>" if is_bo else ""}
-                    </div>
-                    <div style='font-size:13px;line-height:1.9;margin-top:8px'>
-                        💰 <b>السعر:</b> {r['السعر']} &nbsp;|&nbsp; 📥 <b>الدخول:</b> {r['سعر الدخول']}<br>
-                        🎯 <b>هدف1:</b> {r['هدف1']} <b>({r['هدف%1']})</b> &nbsp;|&nbsp; 🎯 <b>هدف2:</b> {r['هدف2']} <b>({r['هدف%2']})</b><br>
-                        🛑 <b>Stop:</b> {r['Stop Loss']} &nbsp;|&nbsp; 📊 RSI: {r['RSI']} {r.get('تحذير RSI','')}<br>
-                        🔬 <b>قوة:</b> {r['القوة%']}% &nbsp;|&nbsp; 💎 {r['توقع النموذج']}<br>
-                        {("<b>📋 محللون:</b> " + str(r.get('توصية المحللين','')) + " &nbsp;|&nbsp; ") if r.get('توصية المحللين') and str(r.get('توصية المحللين','')) not in ('','0','nan') else ""}
-                        {("<b>💡 هامش:</b> " + str(r.get('هامش الأمان%',''))) if r.get('هامش الأمان%') and str(r.get('هامش الأمان%','')) not in ('','0','nan') else ""}
-                    </div>
-                    <details style='margin-top:6px;font-size:12px'>
-                        <summary>أسباب الإشارة 🔍</summary>
-                        <p style='color:#555'>{r.get('_reasons','')}</p>
-                    </details>
-                </div>
-                """, unsafe_allow_html=True)
+                render_top_card(row.to_dict())
         st.divider()
 
 # ============================================================
