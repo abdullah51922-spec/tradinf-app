@@ -2,38 +2,38 @@
 # داشبورد — test12
 # مسح شامل لكل الأسهم + كل المميزات + تقارير Excel يومية وأسبوعية
 # ================================================================
- 
+
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 import pandas as pd
 import sqlite3, os, io
 from datetime import datetime, timedelta
 import pytz
- 
+
 RIYADH_TZ = pytz.timezone("Asia/Riyadh")
- 
+
 def now_riyadh():
     return datetime.now(RIYADH_TZ)
- 
+
 # ============================================================
 # 1. الإعدادات
 # ============================================================
- 
+
 MARKET_PRE_OPEN  = 9  * 60 + 30
 MARKET_OPEN      = 10 * 60
 MARKET_FIRST15   = 10 * 60 + 15
 MARKET_SIGNALS   = 10 * 60 + 15
 MARKET_CLOSE     = 15 * 60
 REPORT_TIME      = 15 * 60 + 15
- 
+
 CAPITAL_DAILY   = 100_000
 MAX_TRADE_DAILY = 20_000
 DAILY_LOSS_STOP = 15_000
- 
+
 ATR_RISK_MULT   = 1.0
 ATR_T1_MULT     = 1.0
 ATR_T2_MULT     = 2.0
- 
+
 MIN_SCORE       = 65
 MIN_CONFIDENCE  = 60
 MIN_SCORE_STR   = 80
@@ -49,171 +49,93 @@ TONIGHT_CLOSE   = 0.75
 TONIGHT_RSI_MAX = 65
 INTRADAY_TTL    = 300
 INTRADAY_MIN_CANDLES = 14
- 
+
 DATA_DIR    = "data"
 DAILY_DIR   = os.path.join(DATA_DIR, "daily_reports")
-TONIGHT_DB  = os.path.join(DATA_DIR, "tonight_watchlist.db")
-SIGNALS_DB  = os.path.join(DATA_DIR, "signals.db")
+TONIGHT_DB  = os.path.join(DATA_DIR, "tonight_watchlist_test12_1.db")
+SIGNALS_DB  = os.path.join(DATA_DIR, "signals_test12_1.db")
 for d in [DATA_DIR, DAILY_DIR]:
     os.makedirs(d, exist_ok=True)
- 
+
 # ============================================================
 # 2. قائمة الأسهم الكاملة — محقَّقة من API
 # ============================================================
- 
+
+
+# ── المجموعة 1 — كبار السوق (بنوك + طاقة + بتروكيماويات + اتصالات) ──
+# 50 سهم الأعلى حجم تداولاً وسيولة في السوق السعودي
+# ─────────────────────────────────────────────────────
 ALL_STOCKS = [
-    # البنوك
+    # ── البنوك (أعلى سيولة في السوق) ──
     ("1010","بنك الرياض"),("1020","بنك الجزيرة"),("1030","البنك السعودي للإستثمار"),
     ("1050","بي اس اف"),("1060","البنك السعودي الأول"),("1080","العربي"),
     ("1120","مصرف الراجحي"),("1140","بنك البلاد"),("1150","مصرف الإنماء"),
     ("1180","البنك الأهلي السعودي"),("1111","شركة مجموعة تداول السعودية القابضة"),
-    # التمويل
-    ("1182","شركة أملاك العالمية للتمويل"),("1183","شركة سهل للتمويل"),
-    # المواد الأساسية
-    ("1201","شركة تكوين المتطورة للصناعات"),("1202","مبكو"),
-    ("1210","شركة الصناعات الكيميائية الأساسية"),("1211","شركة التعدين العربية السعودية"),
-    ("1212","مجموعة أسترا الصناعية"),("1213","شركة نسيج العالمية التجارية"),
-    ("1214","شركة الحسن غازي إبراهيم شاكر"),
-    ("1301","شركة إتحاد مصانع الأسلاك"),("1302","شركة بوان"),
-    ("1303","شركة الصناعات الكهربائية"),("1304","شركة اليمامة للصناعات الحديدية"),
-    ("1320","الشركة السعودية لأنابيب الصلب"),("1321","شركة أنابيب الشرق المتكاملة"),
-    ("1322","شركة المصانع الكبرى للتعدين"),("1323","يو سي آي سي"),
-    ("1324","شركة صالح عبدالعزيز الراشد وأولاده"),
-    ("2001","شركة كيمائيات الميثانول"),("2010","الشركة السعودية للصناعات الأساسية"),
-    ("2020","سابك للمغذيات الزراعية"),("2030","شركة المصافي العربية السعودية"),
-    ("2040","شركة الخزف السعودي"),("2050","مجموعة صافولا"),
-    ("2060","شركة التصنيع الوطنية"),("2070","الدوائية"),
-    ("2080","شركة الغاز والتصنيع الأهلية"),("2081","شركة الخريف لتقنية المياه والطاقة"),
-    ("2082","شركة أكوا باور"),("2090","شركة الجبس الأهلية"),
-    ("2100","شركة وفرة للصناعة والتنمية"),("2110","شركة الكابلات السعودية"),
-    ("2130","الشركة السعودية للتنمية الصناعية"),("2140","شركة أيان للإستثمار"),
-    ("2150","شركة الصناعات الزجاجية الوطنية"),("2160","شركة أميانتيت العربية السعودية"),
-    ("2170","شركة اللجين"),("2180","شركة تصنيع مواد التعبئة والتغليف"),
-    ("2190","شركة البنى التحتية المستدامة القابضة"),("2200","الشركة العربية للأنابيب"),
-    ("2210","شركة نماء للكيماويات"),("2220","الشركة الوطنية لتصنيع وسبك المعادن"),
-    ("2223","شركة أرامكو السعودية لزيوت الأساس"),("2230","الشركة الكيميائية السعودية القابضة"),
-    ("2240","شركة صناعات البناء المتقدمة"),("2250","المجموعة السعودية للإستثمار الصناعي"),
-    ("2270","الشركة السعودية لمنتجات الألبان والأغذية"),
-    ("2280","شركة المراعي"),("2281","شركة التنمية الغذائية"),("2282","شركة نقي للمياه"),
-    ("2283","شركة المطاحن الأولى"),("2284","شركة المطاحن الحديثة"),
-    ("2285","شركة المطاحن العربية"),("2286","شركة المطاحن الرابعة"),
-    ("2287","الشركة العربية للاستثمار الزراعي"),("2288","شركة نفوذ للمنتجات الغذائية"),
-    ("2290","شركة ينبع الوطنية للبتروكيماويات"),("2300","الشركة السعودية لصناعة الورق"),
-    ("2310","شركة الصحراء العالمية للبتروكيماويات"),
-    ("2320","شركة البابطين للطاقة والإتصالات"),("2330","الشركة المتقدمة للبتروكيماويات"),
-    ("2340","شركة ارتيكس للاستثمار الصناعي"),("2350","شركة كيان السعودية للبتروكيماويات"),
-    ("2360","الشركة السعودية لإنتاج الأنابيب الفخارية"),
-    ("2370","شركة الشرق الأوسط للكابلات المتخصصة"),
-    ("2380","شركة رابغ للتكرير والبتروكيماويات"),
-    ("2381","شركة الحفر العربية"),("2382","شركة أديس القابضة"),
-    # الأسمنت
-    ("3002","شركة أسمنت نجران"),("3003","أسمنت المدينة"),
-    ("3004","شركة أسمنت المنطقة الشمالية"),("3005","شركة أسمنت ام القرى"),
-    ("3007","شركة زهرة الواحة للتجارة"),("3008","شركة الكثيري القابضة"),
-    ("3010","شركة الأسمنت العربية"),("3020","شركة أسمنت اليمامة"),
-    ("3030","شركة الأسمنت السعودية"),("3040","شركة أسمنت القصيم"),
-    ("3050","شركة أسمنت المنطقة الجنوبية"),("3060","شركة أسمنت ينبع"),
-    ("3080","شركة أسمنت المنطقة الشرقية"),("3090","شركة أسمنت تبوك"),
-    ("3091","شركة أسمنت الجوف"),("3092","شركة أسمنت الرياض"),
-    # الرعاية الصحية
-    ("4002","شركة المواساة للخدمات الطبية"),("4004","شركة دله للخدمات الصحية"),
-    ("4005","الشركة الوطنية للرعاية الطبية"),("4007","شركة الحمادي القابضة"),
-    ("4009","شركة الشرق الأوسط للرعاية الصحية"),
-    ("4013","مجموعة الدكتور سليمان الحبيب"),("4014","شركة دار المعدات الطبية"),
-    ("4015","شركة مصنع جمجوم للأدوية"),("4016","شركة الشرق الأوسط للصناعات الدوائية"),
-    ("4017","فقيه الطبية"),("4018","الموسى"),("4019","الشركة الطبية التخصصية"),
-    ("4021","شركة مجمع المركز الكندي الطبي"),
-    # التجزئة
-    ("4001","شركة أسواق عبدالله العثيم"),("4003","الشركة المتحدة للإلكترونيات"),
-    ("4006","الشركة السعودية للتسويق"),("4008","الشركة السعودية للعدد والأدوات"),
-    ("4011","شركة لازوردي للمجوهرات"),("4012","شركة ثوب الأصيل"),
-    ("4050","الشركة السعودية لخدمات السيارات والمعدات"),("4051","شركة باعظيم التجارية"),
-    ("4061","مجموعة أنعام الدولية القابضة"),("4190","شركة جرير للتسويق"),
-    ("4191","أبو معطي"),("4192","شركة متاجر السيف"),("4193","نايس ون"),
-    ("4194","شركة مجموعة منزل التسويق"),("4200","شركة الدريس للخدمات البترولية"),
-    ("4240","سينومي ريتيل"),
-    # العقارات
-    ("4020","الشركة العقارية السعودية"),("4100","شركة مكة للإنشاء والتعمير"),
-    ("4130","شركة الباحة للإستثمار والتنمية"),("4150","شركة الرياض للتعمير"),
-    ("4220","إعمار المدينة الإقتصادية"),("4230","شركة البحر الأحمر العالمية"),
-    ("4280","شركة المملكة القابضة"),("4300","شركة دار الأركان للتطوير العقاري"),
-    ("4320","شركة الأندلس العقارية"),
-    # ريت
-    ("4330","صندوق الرياض ريت"),("4331","صندوق الجزيرة ريت"),
-    ("4332","صندوق جدوى ريت الحرمين"),("4333","صندوق تعليم ريت"),
-    ("4334","صندوق المعذر ريت"),("4335","صندوق مشاركة ريت"),
-    ("4336","ملكية ريت"),("4337","صندوق العزيزية ريت"),
-    ("4340","صندوق الراجحي ريت"),("4342","صندوق جدوى ريت السعودية"),
-    ("4344","صندوق سدكو كابيتال ريت"),("4345","صندوق الإنماء ريت"),
-    ("4346","صندوق ميفك ريت"),
-    # ترفيه وخدمات
-    ("1810","مجموعة سيرا القابضة"),("1820","شركة مجموعة بان القابضة"),
-    ("1830","لجام للرياضة"),("4070","تهامة"),
-    ("4071","الشركة العربية للتعهدات الفنية"),("4072","شركة مجموعة إم بي سي"),
-    ("4090","شركة طيبة للإستثمار"),("4160","شركة ثمار التنمية القابضة"),
-    ("4161","شركة بن داود القابضة"),("4162","شركة المنجم للأغذية"),
-    ("4163","شركة الدواء للخدمات الطبية"),("4164","شركة النهدي الطبية"),
-    ("4170","شركة المشروعات السياحية"),("4210","الأبحاث والإعلام"),
-    ("4260","الشركة المتحدة الدولية للمواصلات"),
-    ("4270","الشركة السعودية للطباعة والتغليف"),
-    ("4290","شركة الخليج للتدريب والتعليم"),("4291","الوطنية للتعليم"),
-    ("4292","شركة عطاء التعليمية"),
-    # موارد بشرية ولوجستيك
-    ("1831","شركة مهارة للموارد البشرية"),("1832","شركة صدر للخدمات اللوجستية"),
-    ("1833","شركة الموارد للقوى البشرية"),("1834","الشركة السعودية لحلول القوى البشرية"),
-    ("1835","تمكين"),("4080","شركة سناد القابضة"),
-    ("4110","شركة باتك للإستثمار"),("4140","الشركة السعودية للصادرات الصناعية"),
-    ("4141","شركة العمران للصناعة"),("4142","شركة مجموعة كابلات الرياض"),
-    ("4143","شركة مجموعة التيسير"),("4144","شركة رؤوم التجارية"),
-    ("4145","شركة العبيكان للزجاج"),("4146","شركة جاز العربية للخدمات"),
-    ("4147","شركة اتحاد جروننفلدر سعدي"),("4148","شركة الوسائل الصناعية"),
-    ("4180","مجموعة فتيحي القابضة"),("6004","شركة كاتريون للتموين"),
-    # النقل
-    ("4030","الشركة الوطنية السعودية للنقل البحري"),
-    ("4031","الشركة السعودية للخدمات الأرضية"),
-    ("4040","الشركة السعودية للنقل الجماعي"),
-    ("4261","شركة ذيب لتأجير السيارات"),("4262","شركة لومي للتأجير"),
-    ("4263","شركة سال السعودية للخدمات اللوجستية"),("4264","طيران ناس"),
-    ("4265","شركة شري للتجارة"),
-    # الأغذية والزراعة
-    ("6001","شركة حلواني إخوان"),("6002","شركة هرفي للخدمات الغذائية"),
-    ("6010","الشركة الوطنية للتنمية الزراعية"),("6012","شركة ريدان الغذائية"),
-    ("6013","شركة الأعمال التطويرية الغذائية"),("6014","شركة الآمار الغذائية"),
-    ("6015","أمريكانا للمطاعم العالمية"),("6016","شركة مطاعم بيت الشطيرة"),
-    ("6017","شركة جاهز الدولية"),("6018","شركة الأندية للرياضة"),
-    ("6019","شركة المسار الشامل للتعليم"),("6020","شركة القصيم القابضة"),
-    ("6040","شركة تبوك للتنمية الزراعية"),("6050","الشركة السعودية للأسماك"),
-    ("6060","شركة الشرقية للتنمية"),("6070","الجوف"),("6090","جازادكو"),
-    # الطاقة
+    # ── الطاقة والنفط (القيادي) ──
+    ("2222","شركة الزيت العربية السعودية"),
     ("5110","الشركة السعودية للطاقة"),
-    # الاتصالات والتقنية
+    ("2082","شركة أكوا باور"),
+    # ── البتروكيماويات الكبرى ──
+    ("2010","الشركة السعودية للصناعات الأساسية"),
+    ("2020","سابك للمغذيات الزراعية"),
+    ("2350","شركة كيان السعودية للبتروكيماويات"),
+    ("2380","شركة رابغ للتكرير والبتروكيماويات"),
+    ("2290","شركة ينبع الوطنية للبتروكيماويات"),
+    ("2330","الشركة المتقدمة للبتروكيماويات"),
+    ("2310","شركة الصحراء العالمية للبتروكيماويات"),
+    ("2001","شركة كيمائيات الميثانول"),
+    ("2030","شركة المصافي العربية السعودية"),
+    ("2230","الشركة الكيميائية السعودية القابضة"),
+    ("2210","شركة نماء للكيماويات"),
+    ("2381","شركة الحفر العربية"),
+    # ── الاتصالات والتقنية ──
     ("7010","شركة الإتصالات السعودية"),("7020","شركة إتحاد إتصالات"),
     ("7030","شركة الإتصالات المتنقلة السعودية"),("7040","قو للإتصالات"),
     ("7205","شركة دار البلد لحلول الأعمال"),
-    # أرامكو
-    ("2222","شركة الزيت العربية السعودية"),
+    # ── التعدين والمواد الكبرى ──
+    ("1211","شركة التعدين العربية السعودية"),
+    ("1212","مجموعة أسترا الصناعية"),
+    ("1202","مبكو"),
+    ("2081","شركة الخريف لتقنية المياه والطاقة"),
+    ("2060","شركة التصنيع الوطنية"),
+    ("2382","شركة أديس القابضة"),
+    # ── التمويل ──
+    ("1182","شركة أملاك العالمية للتمويل"),("1183","شركة سهل للتمويل"),
+    # ── صحة وأدوية كبرى ──
+    ("4013","مجموعة الدكتور سليمان الحبيب"),
+    ("4009","شركة الشرق الأوسط للرعاية الصحية"),
+    ("4164","شركة النهدي الطبية"),
+    # ── تجزئة كبرى ──
+    ("4190","شركة جرير للتسويق"),
+    ("4240","سينومي ريتيل"),
+    ("4001","شركة أسواق عبدالله العثيم"),
+    # ── عقارات كبرى ──
+    ("4300","شركة دار الأركان للتطوير العقاري"),
+    ("4230","شركة البحر الأحمر العالمية"),
+    ("4220","إعمار المدينة الإقتصادية"),
+    ("2280","شركة المراعي"),
+    ("2050","مجموعة صافولا"),
 ]
- 
+
 seen_s = set()
 UNIQUE_STOCKS = []
 for sym, name in ALL_STOCKS:
     if sym not in seen_s:
         seen_s.add(sym)
         UNIQUE_STOCKS.append((sym, name))
- 
 # ============================================================
 # 3. الصفحة
 # ============================================================
- 
+
 st.set_page_config(
-    page_title="داشبورد — test12",
+    page_title="داشبورد — test12_1",
     layout="wide",
     page_icon="📊",
     initial_sidebar_state="collapsed"
 )
- 
+
 API_KEY = st.secrets["API_KEY"]
- 
+
 for key, val in {
     "auth": False,
     "daily_pnl": 0.0,
@@ -226,7 +148,7 @@ for key, val in {
 }.items():
     if key not in st.session_state:
         st.session_state[key] = val
- 
+
 if not st.session_state.auth:
     st.markdown("<h2 style='text-align:center;margin-top:100px'>📊 داشبورد — test12</h2>", unsafe_allow_html=True)
     _, col_b, _ = st.columns([1, 1, 1])
@@ -239,18 +161,18 @@ if not st.session_state.auth:
             else:
                 st.error("كلمة مرور خاطئة")
     st.stop()
- 
+
 try:
     from sahmk import SahmkClient
     client = SahmkClient(api_key=API_KEY)
 except Exception as e:
     st.error(f"❌ خطأ في الاتصال بـ API: {e}")
     st.stop()
- 
+
 # ============================================================
 # 4. جلب البيانات
 # ============================================================
- 
+
 @st.cache_data(ttl=30)
 def get_all_quotes():
     all_syms = list({s for s, _ in UNIQUE_STOCKS})
@@ -268,7 +190,7 @@ def get_all_quotes():
                 st.stop()
             errors.append(f"batch {i}: {err_msg[:50]}")
     return quotes_dict, errors
- 
+
 @st.cache_data(ttl=3600)
 def get_historical(sym):
     try:
@@ -283,14 +205,14 @@ def get_historical(sym):
         return closes, highs, lows, volumes
     except:
         return [], [], [], []
- 
+
 @st.cache_data(ttl=600)
 def get_company_info(sym):
     try:
         return client.company(sym)
     except:
         return None
- 
+
 @st.cache_data(ttl=600)
 def get_events(sym):
     try:
@@ -306,7 +228,7 @@ def get_events(sym):
     except:
         pass
     return None
- 
+
 @st.cache_data(ttl=INTRADAY_TTL)
 def get_intraday(sym):
     try:
@@ -322,7 +244,7 @@ def get_intraday(sym):
         return closes, highs, lows, volumes, times, True
     except:
         return [], [], [], [], [], False
- 
+
 @st.cache_data(ttl=60)
 def get_historical_60min(sym):
     try:
@@ -337,21 +259,21 @@ def get_historical_60min(sym):
         return closes, highs, lows, volumes
     except:
         return [], [], [], []
- 
+
 @st.cache_data(ttl=30)
 def get_market():
     try:
         return client.market_summary(), None
     except Exception as e:
         return None, str(e)
- 
+
 @st.cache_data(ttl=30)
 def get_movers():
     try:
         return client.gainers(), client.losers(), client.volume_leaders(), None
     except Exception as e:
         return None, None, None, str(e)
- 
+
 def get_best_data(sym, quotes_dict):
     i_closes, i_highs, i_lows, i_vols, i_times, supported = get_intraday(sym)
     if supported and len(i_closes) >= INTRADAY_MIN_CANDLES:
@@ -362,11 +284,11 @@ def get_best_data(sym, quotes_dict):
         st.session_state.intraday_supported = False
     h_closes, h_highs, h_lows, h_vols = get_historical(sym)
     return h_closes, h_highs, h_lows, h_vols, False, len(h_closes)
- 
+
 # ============================================================
 # 5. المؤشرات الفنية
 # ============================================================
- 
+
 def calc_ema_series(data, period):
     if len(data) < period: return []
     k = 2.0 / (period + 1)
@@ -374,7 +296,7 @@ def calc_ema_series(data, period):
     for price in data[period:]:
         ema.append(price * k + ema[-1] * (1 - k))
     return ema
- 
+
 def calc_rsi(closes, period=14):
     if len(closes) < period + 1: return 50.0
     deltas = [closes[i] - closes[i-1] for i in range(1, len(closes))]
@@ -387,11 +309,11 @@ def calc_rsi(closes, period=14):
         al = (al*(period-1) + losses[i]) / period
     if al == 0: return 100.0
     return round(100 - (100 / (1 + ag/al)), 1)
- 
+
 def calc_rsi_direction(closes, period=14, lookback=5):
     if len(closes) < period + lookback + 1: return 0.0
     return round(calc_rsi(closes, period) - calc_rsi(closes[:-lookback], period), 1)
- 
+
 def calc_macd(closes):
     if len(closes) < 35: return 0.0, 0.0, 0.0
     e12 = calc_ema_series(closes, 12)
@@ -401,44 +323,44 @@ def calc_macd(closes):
     if len(macd_line) < 9: return 0.0, 0.0, 0.0
     sig = calc_ema_series(macd_line, 9)
     return round(macd_line[-1],3), round(sig[-1],3), round(macd_line[-1]-sig[-1],3)
- 
+
 def calc_macd_direction(closes, lookback=3):
     if len(closes) < 38 + lookback: return 0.0
     _, _, h1 = calc_macd(closes)
     _, _, h2 = calc_macd(closes[:-lookback])
     return round(h1 - h2, 4)
- 
+
 def calc_ma(closes, period):
     if len(closes) < period: return 0.0
     return round(sum(closes[-period:]) / period, 2)
- 
+
 def calc_bollinger(closes, period=20):
     if len(closes) < period: return 0.0, 0.0, 0.0
     r  = closes[-period:]
     ma = sum(r) / period
     std = (sum((x-ma)**2 for x in r)/period)**0.5
     return round(ma+2*std,2), round(ma,2), round(ma-2*std,2)
- 
+
 def calc_atr(highs, lows, closes, period=14):
     if len(closes) < period + 1: return 0.0
     trs = [max(highs[i]-lows[i], abs(highs[i]-closes[i-1]), abs(lows[i]-closes[i-1]))
            for i in range(1, len(closes))]
     if len(trs) < period: return 0.0
     return round(sum(trs[-period:]) / period, 3)
- 
+
 def calc_volume(volumes, period=20):
     if len(volumes) < period: return False, False, 0.0, 0.0
     avg20 = sum(volumes[-period:]) / period
     avg5  = sum(volumes[-5:]) / 5 if len(volumes) >= 5 else avg20
     ratio = round(avg5/avg20, 1) if avg20 > 0 else 0.0
     return ratio >= 1.5, ratio >= 2.0, ratio, avg20
- 
+
 def calc_closing_strength(closes, highs, lows):
     if not closes: return 0.0
     h, l, c = highs[-1], lows[-1], closes[-1]
     if h == l: return 0.5
     return round((c-l)/(h-l), 2)
- 
+
 def calc_liquidity_score(vol_ratio, avg_vol):
     if vol_ratio >= 3:     s = 9
     elif vol_ratio >= 2:   s = 8
@@ -451,42 +373,42 @@ def calc_liquidity_score(vol_ratio, avg_vol):
     if avg_vol > 5_000_000:  s = min(s+1, 10)
     elif avg_vol < 500_000:  s = max(s-1, 1)
     return s
- 
+
 def calc_slippage(liq):
     if liq >= 8:   return 0.0005, "عالية جداً ✅"
     elif liq >= 6: return 0.0015, "عالية 🟡"
     elif liq >= 4: return 0.003,  "متوسطة ⚠️"
     else:          return 0.005,  "منخفضة 🔴"
- 
+
 def calc_stochastic(h, l, c, k=14):
     if len(c) < k: return 50.0
     lowest  = min(l[-k:])
     highest = max(h[-k:])
     if highest == lowest: return 50.0
     return round(100 * (c[-1] - lowest) / (highest - lowest), 1)
- 
+
 def calc_vwap(h, l, c, v):
     if not c or not v: return 0.0
     typical = [(h[i]+l[i]+c[i])/3 for i in range(len(c))]
     total_pv = sum(typical[i]*v[i] for i in range(len(c)))
     total_v  = sum(v)
     return round(total_pv/total_v, 2) if total_v > 0 else 0.0
- 
+
 def calc_momentum(c, period=10):
     if len(c) < period + 1: return 0.0
     return round(c[-1] - c[-period-1], 4)
- 
+
 def calc_williams_r(h, l, c, period=14):
     if len(c) < period: return -50.0
     highest = max(h[-period:])
     lowest  = min(l[-period:])
     if highest == lowest: return -50.0
     return round(-100 * (highest - c[-1]) / (highest - lowest), 1)
- 
+
 # ============================================================
 # 6. نظام النقاط الموسّع — يستخدم كل المميزات المتاحة
 # ============================================================
- 
+
 def get_strength_v12(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist,
                      macd_dir, ma20, ma50, price, vol_high, vol_very,
                      vol_ratio, tasi_change, tasi_up, tasi_down,
@@ -496,7 +418,7 @@ def get_strength_v12(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist,
                      event_sentiment, event_importance,
                      beta=None, liq_score=5):
     score, reasons = 0, []
- 
+
     # ── RSI ──
     if rsi < 30:
         score += 30; reasons.append(f"RSI تشبع بيع ({rsi}) 🔥")
@@ -509,7 +431,7 @@ def get_strength_v12(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist,
     if rsi_dir > 10:  score += 8;  reasons.append("RSI زخم قوي")
     elif rsi_dir > 5: score += 4;  reasons.append("RSI صاعد")
     elif rsi_dir < -5: score -= 5; reasons.append("RSI نازل")
- 
+
     # ── MACD ──
     if macd > 0 and macd_hist > 0 and macd > macd_signal and macd_dir > 0:
         score += 25; reasons.append("MACD إشارة شراء قوية 💪")
@@ -519,7 +441,7 @@ def get_strength_v12(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist,
         score += 6
     if macd_dir < 0:
         score -= 8; reasons.append("⚠️ MACD زخم ضعيف")
- 
+
     # ── المتوسطات ──
     if not is_intraday:
         if ma50 > 0 and price > ma50:
@@ -531,7 +453,7 @@ def get_strength_v12(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist,
     else:
         if ma20 > 0 and price > ma20:
             score += 10; reasons.append("فوق EMA9 intraday ✅")
- 
+
     # ── الحجم ──
     if vol_very:
         score += 20; reasons.append(f"حجم استثنائي ×{vol_ratio} 🚀")
@@ -539,7 +461,7 @@ def get_strength_v12(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist,
         score += 12; reasons.append(f"حجم مرتفع ×{vol_ratio}")
     elif vol_ratio >= 1.2:
         score += 6;  reasons.append(f"حجم فوق المتوسط ×{vol_ratio}")
- 
+
     # ── TASI ─ مُحسَّن بنسبة الصاعد/الهابط ──
     tasi_breadth = tasi_up / (tasi_down + 1) if tasi_down > 0 else 1.0
     if tasi_change >= 0.5:
@@ -555,31 +477,31 @@ def get_strength_v12(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist,
         score -= 8;  reasons.append("🔴 غالبية الأسهم هابطة")
     elif tasi_breadth > 1.3:
         score += 5;  reasons.append("🟢 غالبية الأسهم صاعدة")
- 
+
     # ── Bollinger ──
     if bb_lower > 0 and price <= bb_lower * 1.01:
         score += 8;  reasons.append("عند الحد الأدنى BB 🎯")
     elif bb_upper > 0 and price >= bb_upper * 0.99:
         score -= 8;  reasons.append("⚠️ عند الحد الأعلى BB")
- 
+
     # ── Stochastic ──
     if stoch_k < 20:
         score += 8;  reasons.append(f"Stoch ذروة بيع ({stoch_k})")
     elif stoch_k > 80:
         score -= 8;  reasons.append(f"⚠️ Stoch ذروة شراء ({stoch_k})")
- 
+
     # ── Williams %R ──
     if williams_r < -80:
         score += 5;  reasons.append("Williams ذروة بيع")
     elif williams_r > -20:
         score -= 5;  reasons.append("Williams ذروة شراء")
- 
+
     # ── Momentum ──
     if momentum > 0:
         score += 4;  reasons.append("Momentum إيجابي")
     elif momentum < 0:
         score -= 3
- 
+
     # ── صافي السيولة من API ──
     if net_liquidity is not None:
         if net_liquidity > 0:
@@ -588,13 +510,13 @@ def get_strength_v12(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist,
             score -= 12; reasons.append(f"🔴 ضغط بيع قوي (-{abs(net_liquidity/1e6):.0f}M)")
         elif net_liquidity < 0:
             score -= 5;  reasons.append("سيولة صافية بيع")
- 
+
     # ── توصية المحللين ──
     if analyst_consensus in ("buy", "strong_buy"):
         score += 10; reasons.append(f"محللون: {analyst_consensus} ✅")
     elif analyst_consensus == "sell":
         score -= 8;  reasons.append("محللون: بيع ⚠️")
- 
+
     # ── هامش الأمان من السعر العادل ──
     if fair_price and fair_price > 0 and price > 0:
         margin = (fair_price - price) / price * 100
@@ -604,7 +526,7 @@ def get_strength_v12(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist,
             score += 6;  reasons.append(f"سعر عادل أعلى +{margin:.0f}%")
         elif margin < -10:
             score -= 10; reasons.append(f"⚠️ يتداول فوق قيمته {abs(margin):.0f}%")
- 
+
     # ── الأحداث ──
     if event_sentiment == "positive" and event_importance == "important":
         score += 8;  reasons.append("حدث مهم إيجابي 📰")
@@ -612,7 +534,7 @@ def get_strength_v12(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist,
         score += 4
     elif event_sentiment in ("negative", "slightly_negative") and event_importance == "important":
         score -= 8;  reasons.append("حدث مهم سلبي ⚠️")
- 
+
     # ── تغيير اليوم ──
     if change_pct >= 2.0:
         score += 10; reasons.append(f"زخم قوي +{change_pct}%")
@@ -622,12 +544,12 @@ def get_strength_v12(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist,
         score -= 12; reasons.append(f"⚠️ هابط {change_pct}%")
     elif change_pct < -0.5:
         score -= 5
- 
+
     if is_intraday:
         reasons.append("📡 بيانات intraday حقيقية")
- 
+
     return min(max(score, 0), 100), reasons
- 
+
 def calc_confidence_v12(score, rsi_dir, macd_dir, vol_high, vol_very,
                          tasi_change, net_liquidity, analyst_consensus, fair_price, price):
     if score <= 0: return 0
@@ -644,7 +566,7 @@ def calc_confidence_v12(score, rsi_dir, macd_dir, vol_high, vol_very,
     if analyst_consensus in ("buy", "strong_buy"): bonus += 7
     if fair_price and price and fair_price > price * 1.05: bonus += 5
     return min(max(round((score*0.70)+bonus), 0), 100)
- 
+
 def get_signal_v12(score, rsi, confidence, price, ma50, change_pct,
                    liq_score, vol_ratio, atr, is_intraday, net_liquidity):
     in_downtrend = (not is_intraday) and ma50 > 0 and price < ma50 * 0.95
@@ -655,12 +577,12 @@ def get_signal_v12(score, rsi, confidence, price, ma50, change_pct,
     falling      = change_pct < MAX_CHANGE_NEG
     # فلتر إضافي: سيولة صافية سلبية قوية مع score متوسط
     heavy_sell_pressure = (net_liquidity is not None and net_liquidity < -100_000_000 and score < 75)
- 
+
     if any([in_downtrend, atr_small, low_vol, low_liq, falling, heavy_sell_pressure]):
         if score < 35 or rsi > 75:
             return "SELL 🔴", "sell"
         return "WAIT 🟡", "wait"
- 
+
     if score >= MIN_SCORE_STR and rsi < 70 and confidence >= MIN_CONF_STR:
         return "BUY 🟢", "strong"
     if score >= MIN_SCORE and rsi < 65 and confidence >= MIN_CONFIDENCE:
@@ -668,14 +590,14 @@ def get_signal_v12(score, rsi, confidence, price, ma50, change_pct,
     if score < 35 or rsi > 75:
         return "SELL 🔴", "sell"
     return "WAIT 🟡", "wait"
- 
+
 def calc_stars(score):
     if score >= 80:   return "⭐⭐⭐⭐⭐"
     elif score >= 65: return "⭐⭐⭐⭐"
     elif score >= 50: return "⭐⭐⭐"
     elif score >= 35: return "⭐⭐"
     else:             return "⭐"
- 
+
 def calc_targets_and_sl(entry, atr, confidence=50, beta=1.0):
     risk_mult = ATR_RISK_MULT * max(0.5, min(beta or 1.0, 2.0))
     risk      = round(atr * risk_mult, 3)
@@ -688,13 +610,13 @@ def calc_targets_and_sl(entry, atr, confidence=50, beta=1.0):
     elif confidence >= 60: label = "توقع متوسط 📊"
     else:                  label = "توقع محافظ 🛡️"
     return t1, t2, stop, t1_pct, t2_pct, label
- 
+
 def calc_position_size(entry, stop):
     risk = entry - stop
     if risk <= 0: return 0, 0
     shares = int(min(CAPITAL_DAILY, MAX_TRADE_DAILY) / entry)
     return shares, round(shares*entry, 2)
- 
+
 def check_breakout(sym, q, closes, volumes, now_mins, is_intraday=False):
     try:
         change_pct   = float(getattr(q,"change_percent",0) or 0)
@@ -714,16 +636,16 @@ def check_breakout(sym, q, closes, volumes, now_mins, is_intraday=False):
         return is_bo, intra_ratio
     except:
         return False, 0.0
- 
+
 # ============================================================
 # 7. قاعدة البيانات
 # ============================================================
- 
+
 def get_db_conn():
     conn = sqlite3.connect(SIGNALS_DB, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
- 
+
 def init_signals_db():
     with get_db_conn() as conn:
         conn.execute("""
@@ -742,9 +664,9 @@ def init_signals_db():
             )
         """)
         conn.commit()
- 
+
 init_signals_db()
- 
+
 def signal_already_saved_today(sym):
     today = now_riyadh().strftime("%Y-%m-%d")
     with get_db_conn() as conn:
@@ -752,7 +674,7 @@ def signal_already_saved_today(sym):
             "SELECT 1 FROM signals WHERE symbol=? AND date=? LIMIT 1", (sym,today)
         ).fetchone()
     return row is not None
- 
+
 def save_signal(sym, name, signal_type, price, entry, t1, t2, stop,
                 confidence, rsi, macd, vol, slip, liq,
                 is_breakout=0, is_intraday=0):
@@ -776,7 +698,7 @@ def save_signal(sym, name, signal_type, price, entry, t1, t2, stop,
         "Intraday": "📡" if is_intraday else "",
         "Breakout": "🚨" if is_breakout else ""
     })
- 
+
 def load_today_signals():
     today = now_riyadh().strftime("%Y-%m-%d")
     with get_db_conn() as conn:
@@ -784,7 +706,7 @@ def load_today_signals():
             "SELECT * FROM signals WHERE date=? ORDER BY signal_id", (today,)
         ).fetchall()
     return [dict(r) for r in rows]
- 
+
 def eval_signals_continuous(quotes_dict):
     today = now_riyadh().strftime("%Y-%m-%d")
     now_t = now_riyadh().strftime("%H:%M:%S")
@@ -829,16 +751,16 @@ def eval_signals_continuous(quotes_dict):
                 )
             conn.commit()
     except: pass
- 
+
 # ============================================================
 # 8. قائمة الغد
 # ============================================================
- 
+
 def get_tonight_db():
     conn = sqlite3.connect(TONIGHT_DB, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
- 
+
 def init_tonight_db():
     with get_tonight_db() as conn:
         conn.execute("""
@@ -853,10 +775,22 @@ def init_tonight_db():
                 event_sentiment TEXT
             )
         """)
+        # إصلاح: إضافة الأعمدة الجديدة إذا لم تكن موجودة (ترقية الجداول القديمة)
+        existing = [row[1] for row in conn.execute("PRAGMA table_info(watchlist)").fetchall()]
+        for col, coltype in [
+            ("analyst_consensus", "TEXT"),
+            ("fair_price", "REAL"),
+            ("event_sentiment", "TEXT"),
+        ]:
+            if col not in existing:
+                try:
+                    conn.execute(f"ALTER TABLE watchlist ADD COLUMN {col} {coltype}")
+                except Exception:
+                    pass
         conn.commit()
- 
+
 init_tonight_db()
- 
+
 def scan_tonight(stocks_list, quotes_dict):
     today   = now_riyadh().strftime("%Y-%m-%d")
     results = []
@@ -866,7 +800,7 @@ def scan_tonight(stocks_list, quotes_dict):
             if len(closes) < 30: continue
             q = quotes_dict.get(sym)
             if not q: continue
- 
+
             close_str = calc_closing_strength(closes, highs, lows)
             vol_high, vol_very, vol_ratio, avg_vol = calc_volume(volumes)
             rsi      = calc_rsi(closes)
@@ -874,11 +808,11 @@ def scan_tonight(stocks_list, quotes_dict):
             ma50     = calc_ma(closes, 50)
             atr      = calc_atr(highs, lows, closes)
             price    = float(closes[-1])
- 
+
             i_closes, _, _, _, _, i_supported = get_intraday(sym)
             intraday_rsi     = calc_rsi(i_closes) if len(i_closes) >= 14 else rsi
             intraday_candles = len(i_closes)
- 
+
             # بيانات إضافية
             comp = get_company_info(sym)
             analyst_c = ""
@@ -888,15 +822,15 @@ def scan_tonight(stocks_list, quotes_dict):
                 except: pass
                 try: fair_p   = float(getattr(comp.valuation, "fair_price", 0) or 0) if hasattr(comp, "valuation") else 0.0
                 except: pass
- 
+
             ev = get_events(sym)
             ev_sent = ev.get("sentiment","neutral") if ev else "neutral"
- 
+
             if (close_str >= TONIGHT_CLOSE and vol_ratio >= TONIGHT_VOL
                     and rsi < TONIGHT_RSI_MAX and macd_dir > 0
                     and ma50 > 0 and price > ma50
                     and atr/price >= MIN_ATR_PCT and intraday_rsi < 70):
- 
+
                 score_t = (
                     close_str * 40 +
                     min(vol_ratio/3, 1) * 30 +
@@ -906,7 +840,7 @@ def scan_tonight(stocks_list, quotes_dict):
                 if analyst_c in ("buy","strong_buy"): score_t += 8
                 if fair_p > price * 1.05: score_t += 5
                 if ev_sent == "positive": score_t += 5
- 
+
                 results.append({
                     "date": today, "symbol": sym, "name": name,
                     "close_price": price, "closing_strength": close_str,
@@ -918,7 +852,7 @@ def scan_tonight(stocks_list, quotes_dict):
                     "event_sentiment": ev_sent
                 })
         except: continue
- 
+
     if results:
         with get_tonight_db() as conn:
             conn.execute("DELETE FROM watchlist WHERE date=?", (today,))
@@ -936,7 +870,7 @@ def scan_tonight(stocks_list, quotes_dict):
                       r["analyst_consensus"],r["fair_price"],r["event_sentiment"]))
             conn.commit()
     return sorted(results, key=lambda x: x["score"], reverse=True)
- 
+
 def load_tonight_list():
     today = now_riyadh().strftime("%Y-%m-%d")
     with get_tonight_db() as conn:
@@ -944,7 +878,7 @@ def load_tonight_list():
             "SELECT * FROM watchlist WHERE date=? ORDER BY score DESC", (today,)
         ).fetchall()
     return [dict(r) for r in rows]
- 
+
 def scan_premarket(tonight_syms, quotes_dict):
     results = []
     for item in tonight_syms:
@@ -959,48 +893,48 @@ def scan_premarket(tonight_syms, quotes_dict):
                 results.append({**item, "gap_up": round(gap,2)})
         except: continue
     return sorted(results, key=lambda x: x.get("gap_up",0), reverse=True)
- 
+
 # ============================================================
 # 9. التحليل الكامل
 # ============================================================
- 
+
 def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, now_mins, tonight_syms):
     data, failed = [], []
     tonight_set  = {x["symbol"] for x in tonight_syms}
- 
+
     for sym, name in stocks_list:
         try:
             q = quotes_dict.get(sym)
             if not q or not hasattr(q,"price") or not q.price:
                 failed.append(sym); continue
- 
+
             closes, highs, lows, volumes, is_intraday, n_candles = get_best_data(sym, quotes_dict)
             if len(closes) < (INTRADAY_MIN_CANDLES if is_intraday else 30):
                 failed.append(sym); continue
- 
+
             price      = float(q.price)
             change_pct = float(getattr(q,"change_percent",0) or 0)
- 
+
             # ── المؤشرات ──
             rsi      = calc_rsi(closes)
             rsi_dir  = calc_rsi_direction(closes)
             macd, macd_sig, macd_hist = calc_macd(closes)
             macd_dir = calc_macd_direction(closes)
- 
+
             if is_intraday:
                 ma20 = calc_ma(closes, 9)
                 ma50 = 0.0
             else:
                 ma20 = calc_ma(closes, 20)
                 ma50 = calc_ma(closes, 50)
- 
+
             bb_up, _, bb_low  = calc_bollinger(closes)
             atr               = calc_atr(highs, lows, closes)
             stoch_k           = calc_stochastic(highs, lows, closes)
             williams_r        = calc_williams_r(highs, lows, closes)
             momentum          = calc_momentum(closes)
             vwap              = calc_vwap(highs, lows, closes, volumes) if is_intraday else 0.0
- 
+
             vol_high, vol_very, vol_ratio, avg_vol = calc_volume(volumes)
             if is_intraday:
                 today_vol = float(getattr(q,"volume",0) or 0)
@@ -1008,16 +942,16 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, no
                 vol_ratio = round(today_vol/avg_hist, 1) if avg_hist > 0 else vol_ratio
                 vol_high  = vol_ratio >= 1.5
                 vol_very  = vol_ratio >= 2.0
- 
+
             liq_score = calc_liquidity_score(vol_ratio, avg_vol)
             slip_pct, slip_label = calc_slippage(liq_score)
             entry = round(price*(1+slip_pct), 2)
- 
+
             # ── بيانات Quote السيولة ──
             liq_inflow  = float(getattr(getattr(q,"liquidity",None),"inflow_value",0) or 0) if hasattr(q,"liquidity") else 0
             liq_outflow = float(getattr(getattr(q,"liquidity",None),"outflow_value",0) or 0) if hasattr(q,"liquidity") else 0
             net_liq     = liq_inflow - liq_outflow if (liq_inflow or liq_outflow) else None
- 
+
             # ── بيانات الشركة ──
             comp = get_company_info(sym)
             analyst_c  = ""
@@ -1036,13 +970,13 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, no
                         pe_ratio = float(getattr(comp.fundamentals, "pe_ratio", 0) or 0)
                         beta_v   = float(getattr(comp.fundamentals, "beta", 1.0) or 1.0)
                 except: pass
- 
+
             # ── الأحداث ──
             ev = get_events(sym)
             ev_sent    = ev.get("sentiment","neutral") if ev else "neutral"
             ev_imp     = ev.get("importance","regular") if ev else "regular"
             ev_type    = ev.get("type","") if ev else ""
- 
+
             # ── النقاط ──
             score, reasons = get_strength_v12(
                 change_pct, rsi, rsi_dir, macd, macd_sig, macd_hist, macd_dir,
@@ -1062,10 +996,10 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, no
             shares, amount = calc_position_size(entry, stop)
             is_bo, intra_ratio = check_breakout(sym, q, closes, volumes, now_mins, is_intraday)
             in_tonight = sym in tonight_set
- 
+
             # هامش الأمان
             safety_margin = round((fair_p - price)/price*100, 1) if fair_p > 0 and price > 0 else None
- 
+
             # تسجيل تلقائي
             signals_active_now = now_mins >= MARKET_SIGNALS and now_mins < MARKET_CLOSE
             is_workday = now_riyadh().weekday() in [6,0,1,2,3]
@@ -1078,10 +1012,10 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, no
                     save_signal(sym, name, "BREAKOUT 🚨", price, entry, t1, t2, stop,
                                 confidence, rsi, macd, vol_ratio, slip_pct, liq_score,
                                 1, int(is_intraday))
- 
+
             data_layer = "📡 Intraday" if is_intraday else "📅 يومي"
             rsi_warn   = "🔴 احذر!" if rsi > 70 else ("🟡 قريب" if rsi > 65 else "✅")
- 
+
             data.append({
                 "الرمز": sym, "الاسم": name,
                 "السعر": price, "التغيير%": round(change_pct,2),
@@ -1117,13 +1051,13 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, no
             })
         except Exception as e:
             failed.append(f"{sym}({str(e)[:25]})")
- 
+
     return data, failed
- 
+
 # ============================================================
 # 10. CSS
 # ============================================================
- 
+
 st.markdown("""
 <style>
     .stApp { background-color: #f5f6fa; }
@@ -1157,13 +1091,13 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
- 
+
 # ============================================================
 # 11. الحالة الزمنية والبيانات
 # ============================================================
- 
+
 st_autorefresh(interval=30_000, key="autorefresh")
- 
+
 now      = now_riyadh()
 now_mins = now.hour*60 + now.minute
 weekday  = now.weekday()
@@ -1174,7 +1108,7 @@ pre_open       = is_workday_sa and MARKET_PRE_OPEN <= now_mins < MARKET_OPEN
 first_15       = is_workday_sa and MARKET_OPEN <= now_mins < MARKET_FIRST15
 after_close    = is_workday_sa and now_mins >= REPORT_TIME
 circuit_break  = False
- 
+
 market, _ = get_market()
 tasi_change  = float(getattr(market,"index_change_percent",0) or 0) if market else 0.0
 tasi_value   = float(getattr(market,"index_value",0) or 0) if market else 0.0
@@ -1182,33 +1116,33 @@ tasi_up      = int(getattr(market,"advancing",0) or 0) if market else 0
 tasi_down    = int(getattr(market,"declining",0) or 0) if market else 0
 tasi_mood    = getattr(market,"market_mood","") if market else ""
 circuit_break = tasi_change < -3.0
- 
+
 quotes_dict, q_errors = get_all_quotes()
- 
+
 tonight_syms = load_tonight_list()
 premarket_list = scan_premarket(tonight_syms, quotes_dict) if pre_open else []
- 
+
 all_data, failed_syms = analyze_stocks(
     UNIQUE_STOCKS, quotes_dict, tasi_change, tasi_up, tasi_down, now_mins, tonight_syms
 )
- 
+
 if all_data:
     st.session_state.all_data = all_data
     st.session_state.last_scan_time = now.strftime("%H:%M:%S")
     st.session_state.scan_count += 1
- 
+
 if signals_active or after_close:
     eval_signals_continuous(quotes_dict)
 if after_close and all_data:
     scan_tonight(UNIQUE_STOCKS, quotes_dict)
- 
+
 # ============================================================
 # 12. الهيدر الرئيسي
 # ============================================================
- 
+
 col_title, col_clock = st.columns([3, 1])
 with col_title:
-    st.markdown("## 📊 داشبورد — test12")
+    st.markdown("## 📊 داشبورد — test12_1 | المجموعة 1 — كبار السوق (بنوك ")
     # شريط آخر تحديث
     last_upd = st.session_state.last_scan_time or "—"
     ind_count = sum(1 for d in all_data if d.get("_is_intraday")) if all_data else 0
@@ -1218,13 +1152,13 @@ with col_title:
         <small>آخر مسح للمؤشرات: {last_upd} &nbsp;|&nbsp; الأسهم: {len(all_data)} &nbsp;|&nbsp; 📡 Intraday: {ind_count}</small>
     </div>
     """, unsafe_allow_html=True)
- 
+
 with col_clock:
     status_label = ("🟢 السوق مفتوح" if market_open else
                     "🌅 ما قبل الافتتاح" if pre_open else
                     "🔴 السوق مغلق")
     st.info(f"**{status_label}**\n\nTASI: {tasi_value:,.0f}")
- 
+
 # شريط TASI
 c1,c2,c3,c4,c5 = st.columns(5)
 c1.metric("TASI", f"{tasi_value:,.0f}", f"{tasi_change:+.2f}%")
@@ -1232,10 +1166,10 @@ c2.metric("طبيعة البيانات", "📡 Intraday" if st.session_state.int
 c3.metric("صاعد", f"🟢 {tasi_up}")
 c4.metric("هابط", f"🔴 {tasi_down}")
 c5.metric("مزاج السوق", tasi_mood or "—")
- 
+
 if circuit_break:
     st.error("🚨 Circuit Breaker — السوق في هبوط حاد! لا تتداول.")
- 
+
 # ────────────────────────────────────────────────────────────
 # أفضل الفرص — دائمًا في الأعلى
 # ────────────────────────────────────────────────────────────
@@ -1286,11 +1220,11 @@ if all_data:
                 </div>
                 """, unsafe_allow_html=True)
         st.divider()
- 
+
 # ============================================================
 # 13. التابات
 # ============================================================
- 
+
 tab_buy, tab_bo, tab_tomorrow, tab_log, tab_reports, tab_backtest = st.tabs([
     "⚡ كل إشارات BUY",
     "🚨 Breakout",
@@ -1299,7 +1233,7 @@ tab_buy, tab_bo, tab_tomorrow, tab_log, tab_reports, tab_backtest = st.tabs([
     "📊 التقارير",
     "🧪 اختبار الاستراتيجية",
 ])
- 
+
 # ─── كل إشارات BUY ───
 with tab_buy:
     st.subheader("⚡ كل إشارات BUY — المسح الشامل")
@@ -1309,27 +1243,27 @@ with tab_buy:
         df_b = pd.DataFrame(all_data)
         df_buy = df_b[df_b["الإشارة"]=="BUY 🟢"].sort_values("الثقة%", ascending=False)
         st.caption(f"إجمالي الأسهم الممسوحة: {len(df_b)} | BUY: {len(df_buy)} | فشل: {len(failed_syms)}")
- 
+
         show_c = ["الرمز","الاسم","السعر","التغيير%","النجوم","الإشارة",
                   "هدف1","هدف2","Stop Loss","الثقة%","RSI","تحذير RSI",
                   "MACD زخم","Stoch%K","حجم×","صافي السيولة (M)",
                   "توصية المحللين","هامش الأمان%","السعر العادل",
                   "مشاعر الحدث","القوة%","طبقة البيانات","Breakout","في قائمة الغد"]
         show_c = [c for c in show_c if c in df_buy.columns]
- 
+
         f1,f2,f3,f4 = st.columns(4)
         with f1: only_strong = st.checkbox("⭐ Strong فقط")
         with f2: only_intra  = st.checkbox("📡 Intraday فقط")
         with f3: hide_overbought = st.checkbox("إخفاء ذروة RSI")
         with f4: sort_by = st.selectbox("ترتيب:", ["الثقة%","القوة%","RSI","حجم×"])
- 
+
         df_show = df_buy.copy()
         if only_strong:  df_show = df_show[df_show["_signal_type"]=="strong"]
         if only_intra:   df_show = df_show[df_show["طبقة البيانات"]=="📡 Intraday"]
         if hide_overbought and "تحذير RSI" in df_show.columns:
             df_show = df_show[~df_show["تحذير RSI"].str.contains("🔴",na=False)]
         df_show = df_show.sort_values(sort_by, ascending=(sort_by=="RSI"))
- 
+
         st.dataframe(df_show[show_c], use_container_width=True, height=500,
             column_config={
                 "القوة%": st.column_config.ProgressColumn("القوة%", min_value=0, max_value=100),
@@ -1339,7 +1273,7 @@ with tab_buy:
         st.download_button("⬇️ تحميل إشارات BUY", csv_b, f"buy_{now.strftime('%Y_%m_%d')}.csv", "text/csv")
     else:
         st.warning("لا توجد بيانات — جاري المسح...")
- 
+
 # ─── Breakout ───
 with tab_bo:
     st.subheader("🚨 Breakout اللحظي")
@@ -1355,7 +1289,7 @@ with tab_bo:
             st.dataframe(df_bo[show_bo], use_container_width=True)
         else:
             st.info("لا توجد Breakout الآن — ستظهر فور اكتشافها")
- 
+
 # ─── قائمة الغد ───
 with tab_tomorrow:
     st.subheader("🌙 مرشحو الغد")
@@ -1378,7 +1312,7 @@ with tab_tomorrow:
     else:
         msg = "القائمة تُبنى بعد 15:15" if not after_close else "⏳ جاري البناء..."
         st.info(msg)
- 
+
 # ─── سجل اليوم ───
 with tab_log:
     st.subheader("📋 سجل اليوم")
@@ -1394,7 +1328,7 @@ with tab_log:
         c2.metric("BUY", buy_n)
         c3.metric("Breakout", bo_n)
         c4.metric("✅ وصل هدف", won)
- 
+
         show_log = ["date","time","symbol","name","signal_type","price","entry_price",
                     "target1","target2","stop_loss","confidence","rsi","result_24h",
                     "profit_loss","time_to_target","is_breakout","is_intraday"]
@@ -1404,11 +1338,11 @@ with tab_log:
         st.download_button("⬇️ تحميل", csv_log, f"signals_{now.strftime('%Y_%m_%d')}.csv","text/csv")
     else:
         st.info("لا توجد سجلات اليوم")
- 
+
 # ─── التقارير ───
 with tab_reports:
     st.subheader("📊 التقارير")
- 
+
     def build_excel_report(df_signals, report_type="daily"):
         """يبني تقرير Excel شامل"""
         output = io.BytesIO()
@@ -1422,28 +1356,28 @@ with tab_reports:
             pend_s = len(completed[completed["result_24h"].str.startswith("⏳",na=False)]) if not completed.empty else 0
             total_s = len(df_signals)
             rate_s  = round(won_s/len(completed)*100,1) if len(completed) > 0 else 0
- 
+
             summary_data = {
                 "المقياس": ["إجمالي الإشارات","مكتملة","✅ ناجحة","هدف 2","هدف 1","❌ Stop","⏳ لم يصل","نسبة النجاح%"],
                 "القيمة":  [total_s, len(completed), won_s, t2_s, t1_s, stop_s, pend_s, f"{rate_s}%"]
             }
             pd.DataFrame(summary_data).to_excel(writer, sheet_name="الملخص", index=False)
- 
+
             # ورقة كل الإشارات
             df_signals.to_excel(writer, sheet_name="الإشارات الكاملة", index=False)
- 
+
             # ورقة الناجحة
             if not completed.empty:
                 won_df = completed[completed["result_24h"].str.startswith("✅",na=False)]
                 if not won_df.empty:
                     won_df.to_excel(writer, sheet_name="الناجحة", index=False)
- 
+
             # ورقة الخاسرة
             if not completed.empty:
                 lost_df = completed[completed["result_24h"].str.startswith("❌",na=False)]
                 if not lost_df.empty:
                     lost_df.to_excel(writer, sheet_name="الخاسرة", index=False)
- 
+
             # ورقة أداء كل سهم
             if "symbol" in df_signals.columns and "result_24h" in df_signals.columns:
                 def is_win(r): return str(r).startswith("✅") or "هدف" in str(r)
@@ -1454,12 +1388,12 @@ with tab_reports:
                 ).reset_index()
                 perf["نسبة%"] = (perf["ناجحة"]/perf["إشارات"]*100).round(1)
                 perf.sort_values("نسبة%", ascending=False).to_excel(writer, sheet_name="أداء الأسهم", index=False)
- 
+
         output.seek(0)
         return output.getvalue()
- 
+
     r1, r2, r3 = st.tabs(["📅 يومي","📆 أسبوعي","📈 الأداء الكلي"])
- 
+
     with r1:
         today_str = now.strftime("%Y-%m-%d")
         with get_db_conn() as conn:
@@ -1470,20 +1404,20 @@ with tab_reports:
             pend_t = len(df_today[df_today["result_24h"].str.startswith("⏳",na=False)])
             comp_t = won_t + stop_t
             rate_t = round(won_t/comp_t*100,1) if comp_t > 0 else 0
- 
+
             c1,c2,c3,c4,c5 = st.columns(5)
             c1.metric("إجمالي", len(df_today))
             c2.metric("✅ ناجحة", won_t)
             c3.metric("❌ Stop", stop_t)
             c4.metric("⏳ جارٍ", pend_t)
             c5.metric("نسبة النجاح", f"{rate_t}%")
- 
+
             if rate_t >= 65: st.success(f"🎯 النموذج ممتاز اليوم — {rate_t}%")
             elif rate_t >= 55: st.warning(f"📊 النموذج جيد — {rate_t}%")
             elif comp_t > 0: st.error(f"⚠️ {rate_t}% — راجع الفلاتر")
- 
+
             st.dataframe(df_today, use_container_width=True)
- 
+
             # تصدير Excel يومي
             excel_daily = build_excel_report(df_today, "daily")
             st.download_button(
@@ -1494,7 +1428,7 @@ with tab_reports:
             )
         else:
             st.info("لا توجد إشارات اليوم")
- 
+
     with r2:
         week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
         with get_db_conn() as conn:
@@ -1507,14 +1441,14 @@ with tab_reports:
             pend_w = len(df_week[df_week["result_24h"].str.startswith("⏳",na=False)])
             comp_w = won_w + stop_w
             rate_w = round(won_w/comp_w*100,1) if comp_w > 0 else 0
- 
+
             c1,c2,c3,c4,c5 = st.columns(5)
             c1.metric("إجمالي الأسبوع", len(df_week))
             c2.metric("✅ ناجحة", won_w)
             c3.metric("❌ Stop", stop_w)
             c4.metric("⏳ جارٍ", pend_w)
             c5.metric("نسبة الأسبوع", f"{rate_w}%")
- 
+
             # أداء يومي
             if "date" in df_week.columns:
                 def daily_rate(grp):
@@ -1527,7 +1461,7 @@ with tab_reports:
                     "Stop": len(g[g["result_24h"].str.startswith("❌",na=False)])
                 })).reset_index()
                 st.dataframe(daily_perf, use_container_width=True)
- 
+
             # تصدير Excel أسبوعي
             excel_week = build_excel_report(df_week, "weekly")
             st.download_button(
@@ -1538,7 +1472,7 @@ with tab_reports:
             )
         else:
             st.info("لا توجد إشارات هذا الأسبوع")
- 
+
     with r3:
         try:
             with get_db_conn() as conn:
@@ -1550,13 +1484,13 @@ with tab_reports:
                 t2_all  = len(completed_all[completed_all["result_24h"].str.contains("هدف 2",na=False)])
                 t1_all  = len(completed_all[completed_all["result_24h"].str.contains("هدف 1",na=False)])
                 stop_all= len(completed_all[completed_all["result_24h"].str.startswith("❌",na=False)])
- 
+
                 c1,c2,c3,c4 = st.columns(4)
                 c1.metric("إجمالي الكل", total_all)
                 c2.metric("مكتملة", len(completed_all))
                 c3.metric("✅ هدف 2", t2_all)
                 c4.metric("❌ Stop", stop_all)
- 
+
                 if len(completed_all) > 0:
                     rate_all = round(success_all/len(completed_all)*100,1)
                     avg_rr = round(t2_all/(stop_all+1), 2)
@@ -1566,9 +1500,9 @@ with tab_reports:
                     if rate_all >= 65: st.success(f"🎯 النموذج ممتاز — {rate_all}% على كل التاريخ")
                     elif rate_all >= 55: st.warning(f"📊 النموذج جيد — {rate_all}%")
                     else: st.error(f"⚠️ {rate_all}% — يحتاج مراجعة")
- 
+
                 st.dataframe(df_all_s.head(100), use_container_width=True)
- 
+
                 # تصدير كل السجل
                 excel_all = build_excel_report(df_all_s, "all")
                 st.download_button(
@@ -1579,7 +1513,7 @@ with tab_reports:
                 )
         except Exception as e:
             st.info(f"ستظهر البيانات بعد أول إشارة — {e}")
- 
+
     # حفظ تقرير يومي CSV بعد الإغلاق
     if after_close and all_data:
         df_save = pd.DataFrame(all_data)
@@ -1589,7 +1523,7 @@ with tab_reports:
                   "صافي السيولة (M)","القوة%","طبقة البيانات","Breakout"]
         save_c = [c for c in save_c if c in df_save.columns]
         df_save[save_c].to_csv(path, index=False, encoding="utf-8-sig")
- 
+
 # ─── اختبار الاستراتيجية (Backtest) ───
 with tab_backtest:
     st.subheader("🧪 اختبار الاستراتيجية — تحليل الأهداف والتوقيت")
@@ -1600,7 +1534,7 @@ with tab_backtest:
     - يقيس: هل وصل الهدف؟ متى وصل؟ هل ضرب الـ Stop؟
     - يحلل: متوسط وقت تحقيق كل هدف، نسبة النجاح، R/R الفعلي
     """)
- 
+
     def backtest_one_stock_v12(sym, name, n_days=20):
         try:
             closes, highs, lows, volumes = get_historical(sym)
@@ -1611,10 +1545,10 @@ with tab_backtest:
             for i in range(start_idx, len(closes) - 1):
                 c = closes[:i]; h = highs[:i]; l = lows[:i]; v = volumes[:i]
                 if len(c) < 30: continue
- 
+
                 price      = closes[i-1]
                 change_pct = (closes[i-1] - closes[i-2]) / closes[i-2] * 100 if i > 1 else 0
- 
+
                 rsi      = calc_rsi(c)
                 rsi_dir  = calc_rsi_direction(c)
                 macd, macd_sig, macd_hist = calc_macd(c)
@@ -1630,7 +1564,7 @@ with tab_backtest:
                 liq_score = calc_liquidity_score(vol_ratio, avg_vol)
                 slip_pct, _ = calc_slippage(liq_score)
                 entry = round(price * (1 + slip_pct), 2)
- 
+
                 score, reasons = get_strength_v12(
                     change_pct, rsi, rsi_dir, macd, macd_sig, macd_hist, macd_dir,
                     ma20, ma50, price, vol_high, vol_very, vol_ratio,
@@ -1645,17 +1579,17 @@ with tab_backtest:
                 )
                 if not atr or atr == 0: continue
                 t1, t2, stop, t1_pct, t2_pct, _ = calc_targets_and_sl(entry, atr, confidence)
- 
+
                 # النتيجة في اليوم التالي
                 next_close = closes[i]
                 next_high  = highs[i]
                 next_low   = lows[i]
                 actual_chg = round((next_close - price) / price * 100, 2)
- 
+
                 hit_t2   = next_high >= t2
                 hit_t1   = next_high >= t1
                 hit_stop = next_low  <= stop
- 
+
                 # وقت التحقيق (بالأيام)
                 days_to_target = None
                 if hit_t2 or hit_t1:
@@ -1666,7 +1600,7 @@ with tab_backtest:
                                 days_to_target = fwd; break
                             elif hit_t1 and highs[i+fwd] >= t1:
                                 days_to_target = fwd; break
- 
+
                 if hit_t2:
                     outcome = "✅ هدف 2"; pnl_pct = t2_pct
                 elif hit_t1 and not hit_stop:
@@ -1678,7 +1612,7 @@ with tab_backtest:
                     outcome = "🟡 هدف 1 ثم Stop"; pnl_pct = t1_pct / 2
                 else:
                     outcome = "⏳ لم يصل"; pnl_pct = actual_chg
- 
+
                 results.append({
                     "الرمز": sym, "الاسم": name,
                     "يوم": i - start_idx + 1,
@@ -1694,7 +1628,7 @@ with tab_backtest:
             return results
         except:
             return []
- 
+
     def run_backtest_v12(stocks_list, n_days=20):
         all_results = []
         prog = st.progress(0)
@@ -1707,7 +1641,7 @@ with tab_backtest:
             prog.progress((i+1)/total)
         prog.empty(); stat.empty()
         return all_results
- 
+
     col_bt1, col_bt2, col_bt3 = st.columns(3)
     with col_bt1:
         bt_days = st.slider("عدد أيام الاختبار:", 5, 20, 20)
@@ -1715,19 +1649,19 @@ with tab_backtest:
         bt_scope = st.selectbox("النطاق:", ["أسهم سريعة (50 سهم)", "كل الأسهم (~214)"])
     with col_bt3:
         bt_filter = st.selectbox("فلتر:", ["BUY فقط", "كل الإشارات"])
- 
+
     run_bt = st.button("🚀 ابدأ اختبار الاستراتيجية", type="primary")
- 
+
     if run_bt:
         import random
         if bt_scope == "أسهم سريعة (50 سهم)":
             stocks_to_test = random.sample(UNIQUE_STOCKS, min(50, len(UNIQUE_STOCKS)))
         else:
             stocks_to_test = UNIQUE_STOCKS
- 
+
         with st.spinner(f"جاري اختبار {len(stocks_to_test)} سهم على آخر {bt_days} يوم..."):
             bt_results = run_backtest_v12(stocks_to_test, bt_days)
- 
+
         if not bt_results:
             st.error("❌ لم تُنتج أي نتائج — تحقق من البيانات")
         else:
@@ -1736,7 +1670,7 @@ with tab_backtest:
                 df_show_bt = df_bt[df_bt["نوع الإشارة"].isin(["strong","normal"])].copy()
             else:
                 df_show_bt = df_bt.copy()
- 
+
             total_sig = len(df_show_bt)
             buy_sig   = len(df_show_bt[df_show_bt["نوع الإشارة"].isin(["strong","normal"])])
             won_bt    = df_show_bt["ناجحة"].sum()
@@ -1746,12 +1680,12 @@ with tab_backtest:
             hit_stop_bt = len(df_show_bt[df_show_bt["النتيجة"]=="❌ Stop Loss"])
             avg_win_bt  = df_show_bt[df_show_bt["ناجحة"]==1]["ربح/خسارة%"].mean()
             avg_loss_bt = df_show_bt[df_show_bt["ناجحة"]==0]["ربح/خسارة%"].mean()
- 
+
             # ── وقت تحقيق الأهداف ──
             target_rows = df_show_bt[df_show_bt["أيام_للهدف"].notna()]
             avg_days_t1 = target_rows[target_rows["النتيجة"].str.contains("هدف 1",na=False)]["أيام_للهدف"].mean()
             avg_days_t2 = target_rows[target_rows["النتيجة"]=="✅ هدف 2"]["أيام_للهدف"].mean()
- 
+
             st.divider()
             st.markdown("### 📊 نتائج اختبار الاستراتيجية")
             m1,m2,m3,m4 = st.columns(4)
@@ -1759,13 +1693,13 @@ with tab_backtest:
             m2.metric("ناجحة", int(won_bt))
             m3.metric("نسبة النجاح", f"{succ_rate}%", delta=f"+{succ_rate-50:.1f}% عن العشوائي")
             m4.metric("BUY إشارات", buy_sig)
- 
+
             m5,m6,m7,m8 = st.columns(4)
             m5.metric("✅ وصل هدف 2", hit_t2_bt)
             m6.metric("🟡 وصل هدف 1", hit_t1_bt)
             m7.metric("❌ ضرب Stop", hit_stop_bt)
             m8.metric("R/R الفعلي", f"{round(hit_t2_bt/(hit_stop_bt+1),2)}:1")
- 
+
             st.divider()
             st.markdown("### ⏱️ تحليل وقت تحقيق الأهداف")
             ta1,ta2,ta3,ta4 = st.columns(4)
@@ -1773,7 +1707,7 @@ with tab_backtest:
             ta2.metric("متوسط أيام لهدف 2", f"{avg_days_t2:.1f}" if avg_days_t2 == avg_days_t2 else "—")
             ta3.metric("متوسط ربح الناجحة", f"{avg_win_bt:.2f}%" if avg_win_bt == avg_win_bt else "—")
             ta4.metric("متوسط خسارة الفاشلة", f"{avg_loss_bt:.2f}%" if avg_loss_bt == avg_loss_bt else "—")
- 
+
             st.divider()
             # حكم على النموذج
             if succ_rate >= 65:
@@ -1784,18 +1718,18 @@ with tab_backtest:
                 st.warning(f"⚠️ **متوسطة** — {succ_rate}% — تحتاج تحسين")
             else:
                 st.error(f"❌ **ضعيفة** — {succ_rate}% — راجع الفلاتر")
- 
+
             # ── تفاصيل ──
             bt_tab1, bt_tab2, bt_tab3, bt_tab4, bt_tab5 = st.tabs([
                 "📋 كل الإشارات","✅ الناجحة","❌ الخاسرة",
                 "📈 أداء كل سهم","⏱️ توزيع وقت الأهداف"
             ])
- 
+
             show_cols_bt = ["الرمز","الاسم","الإشارة","القوة%","الثقة%",
                             "RSI","هدف1%","هدف2%","تغيير_فعلي%",
                             "النتيجة","ربح/خسارة%","أيام_للهدف"]
             show_cols_bt = [c for c in show_cols_bt if c in df_show_bt.columns]
- 
+
             with bt_tab1:
                 st.dataframe(df_show_bt[show_cols_bt].sort_values("ربح/خسارة%",ascending=False),
                              use_container_width=True, height=500,
@@ -1805,7 +1739,7 @@ with tab_backtest:
                              })
                 csv_bt = df_show_bt[show_cols_bt].to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
                 st.download_button("⬇️ تحميل CSV", csv_bt, f"backtest_{bt_days}days.csv","text/csv")
- 
+
                 # تصدير Excel كامل للـ Backtest
                 bt_excel_out = io.BytesIO()
                 with pd.ExcelWriter(bt_excel_out, engine="openpyxl") as bw:
@@ -1826,7 +1760,7 @@ with tab_backtest:
                     f"backtest_excel_{bt_days}days.xlsx",
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
- 
+
             with bt_tab2:
                 df_won_bt = df_show_bt[df_show_bt["ناجحة"]==1].sort_values("ربح/خسارة%",ascending=False)
                 if not df_won_bt.empty:
@@ -1834,7 +1768,7 @@ with tab_backtest:
                     st.dataframe(df_won_bt[show_cols_bt], use_container_width=True)
                 else:
                     st.info("لا توجد إشارات ناجحة")
- 
+
             with bt_tab3:
                 df_lost_bt = df_show_bt[df_show_bt["ناجحة"]==0].sort_values("ربح/خسارة%")
                 if not df_lost_bt.empty:
@@ -1842,7 +1776,7 @@ with tab_backtest:
                     st.dataframe(df_lost_bt[show_cols_bt], use_container_width=True)
                 else:
                     st.success("لا توجد إشارات خاسرة! ✅")
- 
+
             with bt_tab4:
                 if "الرمز" in df_show_bt.columns:
                     stock_p = df_show_bt.groupby(["الرمز","الاسم"]).agg(
@@ -1857,7 +1791,7 @@ with tab_backtest:
                     stock_p = stock_p.sort_values("نسبة%", ascending=False)
                     st.dataframe(stock_p, use_container_width=True, height=500,
                         column_config={"نسبة%": st.column_config.ProgressColumn("نسبة%",min_value=0,max_value=100)})
- 
+
             with bt_tab5:
                 days_dist = df_show_bt[df_show_bt["أيام_للهدف"].notna()].groupby("أيام_للهدف").size().reset_index(name="عدد")
                 if not days_dist.empty:
@@ -1868,6 +1802,6 @@ with tab_backtest:
                     st.dataframe(outcome_dist, use_container_width=True)
                 else:
                     st.info("لا توجد بيانات كافية لتحليل التوقيت")
- 
+
 st.divider()
-st.caption(f"⚠️ test12 — مرجع تقني | آخر مسح: {st.session_state.last_scan_time or '—'} | للمعلومات فقط، ليست توصية استثمارية")
+st.caption(f"⚠️ test12_1 — مرجع تقني | آخر مسح: {st.session_state.last_scan_time or '—'} | للمعلومات فقط، ليست توصية استثمارية")
