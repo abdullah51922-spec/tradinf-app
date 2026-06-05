@@ -1060,35 +1060,111 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, no
 
 st.markdown("""
 <style>
-    .stApp { background-color: #f5f6fa; }
-    .signal-card {
-        padding:16px; border-radius:14px; margin-bottom:12px;
-        border:1.5px solid #dde1ea; box-shadow:0 2px 8px rgba(0,0,0,0.07);
-        background:#ffffff;
-    }
-    .buy-card      { background:#f0faf2; border-color:#4caf50; }
-    .strong-card   { background:#e8f5e9; border-color:#2e7d32; border-width:2px; }
-    .breakout-card { background:#fff8e1; border-color:#f0b429; border-width:2px; }
-    .intraday-card { background:#e8f4fd; border-color:#1565c0; border-width:2px; }
-    .wait-card     { background:#fffdf0; border-color:#f0b429; }
-    .sell-card     { background:#fff5f5; border-color:#e53935; }
-    .metric-row { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0; }
-    .badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
-    .badge-green  { background:#e6f4ea; color:#2e7d32; border:1px solid #a5d6a7; }
-    .badge-yellow { background:#fff8e1; color:#f57f17; border:1px solid #ffe082; }
-    .badge-red    { background:#ffebee; color:#c62828; border:1px solid #ef9a9a; }
-    .badge-blue   { background:#e3f2fd; color:#1565c0; border:1px solid #90caf9; }
-    .badge-purple { background:#ede7f6; color:#4527a0; border:1px solid #b39ddb; }
-    .badge-teal   { background:#e0f2f1; color:#00695c; border:1px solid #80cbc4; }
-    .stButton > button {
-        border-radius:8px; font-weight:600;
-        border:1.5px solid #dde1ea; background:#ffffff; color:#1a1a2e;
-    }
-    .update-bar {
-        background:#1a237e; color:#ffffff; padding:6px 16px;
-        border-radius:8px; font-size:12px; display:inline-block;
-        margin-bottom:8px;
-    }
+/* ── الخلفية العامة ── */
+.stApp { background:#f0f2f6; }
+[data-testid="stAppViewContainer"] { background:#f0f2f6; }
+
+/* ── بطاقة الإشارة ── */
+.sc {
+    border-radius:16px; padding:0;
+    margin-bottom:14px; overflow:hidden;
+    border:none; box-shadow:0 1px 4px rgba(0,0,0,0.10);
+    background:#fff; font-family:inherit;
+}
+.sc-header {
+    padding:12px 16px 10px;
+    display:flex; justify-content:space-between; align-items:center;
+    border-bottom:1px solid rgba(0,0,0,0.06);
+}
+.sc-sym { font-size:15px; font-weight:700; color:#111; }
+.sc-name { font-size:12px; color:#666; margin-top:2px; }
+.sc-stars { font-size:13px; letter-spacing:1px; }
+.sc-badges { padding:8px 16px; display:flex; gap:5px; flex-wrap:wrap; }
+.sc-body { padding:0 16px 4px; }
+.sc-row {
+    display:grid; grid-template-columns:1fr 1fr;
+    gap:0; border-bottom:1px solid #f3f4f6;
+    padding:7px 0;
+}
+.sc-row:last-child { border-bottom:none; }
+.sc-cell { font-size:12px; color:#444; }
+.sc-label { font-size:11px; color:#999; margin-bottom:2px; }
+.sc-val { font-size:13px; font-weight:600; color:#111; }
+.sc-val-g { color:#1b7a3e; }
+.sc-val-r { color:#c0392b; }
+.sc-val-b { color:#1565c0; }
+.sc-reasons {
+    margin:0 16px 12px; padding:8px 12px;
+    background:#f8f9fb; border-radius:8px;
+    font-size:11px; color:#555; line-height:1.7;
+}
+
+/* أنواع البطاقات — شريط لوني في الأعلى */
+.sc-strong  .sc-header { border-top:4px solid #1b7a3e; background:#f0faf3; }
+.sc-buy     .sc-header { border-top:4px solid #4caf50; background:#f6fdf7; }
+.sc-intraday .sc-header { border-top:4px solid #1565c0; background:#f0f6ff; }
+.sc-breakout .sc-header { border-top:4px solid #f59e0b; background:#fffbf0; }
+.sc-wait    .sc-header { border-top:4px solid #d1d5db; background:#fafafa; }
+.sc-sell    .sc-header { border-top:4px solid #e53935; background:#fff8f8; }
+
+/* ── شارات ── */
+.badge {
+    display:inline-flex; align-items:center; gap:3px;
+    padding:3px 9px; border-radius:99px;
+    font-size:11px; font-weight:600; white-space:nowrap;
+}
+.b-green  { background:#e6f4ea; color:#1b7a3e; }
+.b-blue   { background:#e3f0fd; color:#1565c0; }
+.b-amber  { background:#fff8e1; color:#b45309; }
+.b-red    { background:#ffebee; color:#c0392b; }
+.b-purple { background:#f0ebff; color:#5b21b6; }
+.b-gray   { background:#f3f4f6; color:#555; }
+
+/* ── هيدر الداشبورد ── */
+.dash-header {
+    background:#fff; border-radius:16px;
+    padding:16px 20px; margin-bottom:16px;
+    box-shadow:0 1px 4px rgba(0,0,0,0.08);
+    display:flex; justify-content:space-between; align-items:center;
+    flex-wrap:wrap; gap:10px;
+}
+.dash-title { font-size:20px; font-weight:700; color:#111; margin:0; }
+.dash-sub { font-size:12px; color:#888; margin-top:3px; }
+.dash-status {
+    display:flex; align-items:center; gap:8px;
+    font-size:13px; font-weight:600;
+}
+.status-dot {
+    width:9px; height:9px; border-radius:50%; display:inline-block;
+}
+.dot-green { background:#22c55e; }
+.dot-red   { background:#ef4444; }
+.dot-amber { background:#f59e0b; }
+
+/* ── شريط TASI ── */
+.tasi-bar {
+    background:#fff; border-radius:12px;
+    padding:12px 20px; margin-bottom:14px;
+    box-shadow:0 1px 4px rgba(0,0,0,0.06);
+    display:flex; gap:28px; flex-wrap:wrap; align-items:center;
+}
+.tasi-item { text-align:center; }
+.tasi-label { font-size:11px; color:#888; margin-bottom:2px; }
+.tasi-val { font-size:18px; font-weight:700; color:#111; }
+.tasi-sub { font-size:11px; color:#666; }
+
+/* ── شريط التحديث ── */
+.upd-bar {
+    background:#1e3a5f; color:#e8f0fb;
+    border-radius:10px; padding:7px 16px;
+    font-size:12px; display:flex;
+    align-items:center; gap:10px; flex-wrap:wrap;
+    margin-bottom:14px;
+}
+.upd-dot { width:7px; height:7px; border-radius:50%; background:#22c55e; display:inline-block; }
+
+/* ── تحسينات عامة ── */
+.stTabs [data-baseweb="tab"] { font-size:13px; font-weight:600; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1140,35 +1216,129 @@ if after_close and all_data:
 # 12. الهيدر الرئيسي
 # ============================================================
 
-col_title, col_clock = st.columns([3, 1])
-with col_title:
-    st.markdown("## 📊 داشبورد — test12_1 | المجموعة 1 — كبار السوق (بنوك ")
-    # شريط آخر تحديث
-    last_upd = st.session_state.last_scan_time or "—"
-    ind_count = sum(1 for d in all_data if d.get("_is_intraday")) if all_data else 0
-    st.markdown(f"""
-    <div class='update-bar'>
-        🔄 آخر تحديث: {now.strftime("%Y-%m-%d %H:%M:%S")} (بتوقيت الرياض) &nbsp;|&nbsp;
-        <small>آخر مسح للمؤشرات: {last_upd} &nbsp;|&nbsp; الأسهم: {len(all_data)} &nbsp;|&nbsp; 📡 Intraday: {ind_count}</small>
+
+# ── شريط التحديث ──
+last_upd  = st.session_state.last_scan_time or "لم يبدأ بعد"
+ind_count = sum(1 for d in all_data if d.get("_is_intraday")) if all_data else 0
+buy_count = sum(1 for d in all_data if d.get("_signal_type") in ("strong","normal")) if all_data else 0
+dot_color = "#22c55e" if market_open else "#ef4444"
+st.markdown(f"""
+<div class='upd-bar'>
+    <span class='upd-dot' style='background:{dot_color}'></span>
+    <span><b>آخر تحديث:</b> {now.strftime("%H:%M:%S")}</span>
+    <span style='color:#aac'>|</span>
+    <span>مسح المؤشرات: {last_upd}</span>
+    <span style='color:#aac'>|</span>
+    <span>أسهم: <b>{len(all_data)}</b></span>
+    <span style='color:#aac'>|</span>
+    <span>BUY: <b style='color:#7ee8a2'>{buy_count}</b></span>
+    {"<span style='color:#aac'>|</span><span>Intraday: <b style='color:#90c9ff'>" + str(ind_count) + "</b></span>" if ind_count else ""}
+</div>
+""", unsafe_allow_html=True)
+
+# ── شريط TASI ──
+tasi_chg_color = "#22c55e" if tasi_change >= 0 else "#ef4444"
+breadth_pct = round(tasi_up/(tasi_up+tasi_down)*100) if (tasi_up+tasi_down)>0 else 50
+mood_badge = {"Bullish":"🟢 صاعد","Bearish":"🔴 هابط","Neutral":"🟡 محايد"}.get(tasi_mood, tasi_mood or "—")
+st.markdown(f"""
+<div class='tasi-bar'>
+    <div class='tasi-item'>
+        <div class='tasi-label'>مؤشر تاسي</div>
+        <div class='tasi-val'>{tasi_value:,.0f}</div>
+        <div class='tasi-sub' style='color:{tasi_chg_color};font-weight:600'>{tasi_change:+.2f}%</div>
     </div>
-    """, unsafe_allow_html=True)
-
-with col_clock:
-    status_label = ("🟢 السوق مفتوح" if market_open else
-                    "🌅 ما قبل الافتتاح" if pre_open else
-                    "🔴 السوق مغلق")
-    st.info(f"**{status_label}**\n\nTASI: {tasi_value:,.0f}")
-
-# شريط TASI
-c1,c2,c3,c4,c5 = st.columns(5)
-c1.metric("TASI", f"{tasi_value:,.0f}", f"{tasi_change:+.2f}%")
-c2.metric("طبيعة البيانات", "📡 Intraday" if st.session_state.intraday_supported else "📅 يومي")
-c3.metric("صاعد", f"🟢 {tasi_up}")
-c4.metric("هابط", f"🔴 {tasi_down}")
-c5.metric("مزاج السوق", tasi_mood or "—")
+    <div class='tasi-item'>
+        <div class='tasi-label'>صاعد</div>
+        <div class='tasi-val' style='color:#22c55e'>{tasi_up}</div>
+    </div>
+    <div class='tasi-item'>
+        <div class='tasi-label'>هابط</div>
+        <div class='tasi-val' style='color:#ef4444'>{tasi_down}</div>
+    </div>
+    <div class='tasi-item'>
+        <div class='tasi-label'>نبض السوق</div>
+        <div class='tasi-val' style='font-size:14px'>{mood_badge}</div>
+        <div class='tasi-sub'>{breadth_pct}% صاعد</div>
+    </div>
+    <div class='tasi-item'>
+        <div class='tasi-label'>البيانات</div>
+        <div class='tasi-val' style='font-size:14px'>{"📡 Intraday" if st.session_state.intraday_supported else "📅 يومي"}</div>
+    </div>
+    <div class='tasi-item'>
+        <div class='tasi-label'>وقت السوق</div>
+        <div class='tasi-val' style='font-size:14px'>{"🟢 مفتوح" if market_open else "🌅 قريب" if pre_open else "🔴 مغلق"}</div>
+        <div class='tasi-sub'>{now.strftime("%H:%M")}</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 if circuit_break:
-    st.error("🚨 Circuit Breaker — السوق في هبوط حاد! لا تتداول.")
+    st.error("🚨 تنبيه Circuit Breaker — السوق في هبوط حاد. لا تتداول.")
+
+
+
+
+
+def render_top_card(r):
+    sig_type = r.get("_signal_type","wait")
+    is_bo    = r.get("_is_bo", False)
+    is_intra = r.get("_is_intraday", False)
+    sc_type  = ("sc-strong" if sig_type=="strong" else
+                "sc-intraday" if is_intra else
+                "sc-breakout" if is_bo else
+                "sc-buy" if sig_type=="normal" else "sc-wait")
+    liq_s = r.get("_liq_score",0)
+    liq_b = "b-green" if liq_s>=7 else "b-amber" if liq_s>=4 else "b-red"
+
+    chg = r.get("التغيير%",0)
+    chg_col = "sc-val-g" if chg>=0 else "sc-val-r"
+
+    analyst = str(r.get("توصية المحللين",""))
+    margin  = str(r.get("هامش الأمان%",""))
+    analyst_ok = analyst and analyst not in ("","0","nan","None")
+    margin_ok  = margin  and margin  not in ("","0","nan","None")
+
+    reasons = r.get("_reasons","").replace("|","•")
+
+    html = f"""
+<div class='sc {sc_type}'>
+  <div class='sc-header'>
+    <div>
+      <div class='sc-sym'>{r['الرمز']} &nbsp;<span style='font-weight:400;font-size:13px;color:#444'>{r['الاسم']}</span></div>
+    </div>
+    <div class='sc-stars'>{r.get('النجوم','')}</div>
+  </div>
+  <div class='sc-badges'>
+    <span class='badge b-green'>{r['الإشارة']}</span>
+    <span class='badge b-blue'>ثقة {r['الثقة%']}%</span>
+    <span class='badge {liq_b}'>سيولة {r['السيولة']}</span>
+    {"<span class='badge b-purple'>Intraday</span>" if is_intra else "<span class='badge b-gray'>يومي</span>"}
+    {"<span class='badge b-amber'>Breakout</span>" if is_bo else ""}
+    {("<span class='badge b-blue'>" + analyst + "</span>") if analyst_ok else ""}
+    {("<span class='badge b-green'>هامش " + margin + "</span>") if margin_ok else ""}
+  </div>
+  <div class='sc-body'>
+    <div class='sc-row'>
+      <div class='sc-cell'><div class='sc-label'>السعر الحالي</div><div class='sc-val'>{r['السعر']}</div></div>
+      <div class='sc-cell'><div class='sc-label'>سعر الدخول</div><div class='sc-val sc-val-b'>{r['سعر الدخول']}</div></div>
+    </div>
+    <div class='sc-row'>
+      <div class='sc-cell'><div class='sc-label'>هدف 1</div><div class='sc-val sc-val-g'>{r['هدف1']} &nbsp;<small>{r['هدف%1']}</small></div></div>
+      <div class='sc-cell'><div class='sc-label'>هدف 2</div><div class='sc-val sc-val-g'>{r['هدف2']} &nbsp;<small>{r['هدف%2']}</small></div></div>
+    </div>
+    <div class='sc-row'>
+      <div class='sc-cell'><div class='sc-label'>وقف الخسارة</div><div class='sc-val sc-val-r'>{r['Stop Loss']}</div></div>
+      <div class='sc-cell'><div class='sc-label'>التغيير اليوم</div><div class='sc-val {chg_col}'>{chg:+.2f}%</div></div>
+    </div>
+    <div class='sc-row'>
+      <div class='sc-cell'><div class='sc-label'>RSI</div><div class='sc-val'>{r['RSI']} {r.get('تحذير RSI','')}</div></div>
+      <div class='sc-cell'><div class='sc-label'>قوة الإشارة</div><div class='sc-val'>{r['القوة%']}%</div></div>
+    </div>
+  </div>
+  <div class='sc-reasons'>{reasons}</div>
+</div>"""
+    st.markdown(html, unsafe_allow_html=True)
+
 
 # ────────────────────────────────────────────────────────────
 # أفضل الفرص — دائمًا في الأعلى
