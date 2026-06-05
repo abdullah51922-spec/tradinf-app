@@ -1210,8 +1210,8 @@ if all_data:
                         🎯 <b>هدف1:</b> {r['هدف1']} <b>({r['هدف%1']})</b> &nbsp;|&nbsp; 🎯 <b>هدف2:</b> {r['هدف2']} <b>({r['هدف%2']})</b><br>
                         🛑 <b>Stop:</b> {r['Stop Loss']} &nbsp;|&nbsp; 📊 RSI: {r['RSI']} {r.get('تحذير RSI','')}<br>
                         🔬 <b>قوة:</b> {r['القوة%']}% &nbsp;|&nbsp; 💎 {r['توقع النموذج']}<br>
-                        {"<b>📋 محللون:</b> " + str(r.get('توصية المحللين','')) + " &nbsp;|&nbsp; " if r.get('توصية المحللين') else ""}
-                        {"<b>💡 هامش:</b> " + str(r.get('هامش الأمان%','')) if r.get('هامش الأمان%') else ""}
+                        {("<b>📋 محللون:</b> " + str(r.get('توصية المحللين','')) + " &nbsp;|&nbsp; ") if r.get('توصية المحللين') and str(r.get('توصية المحللين','')) not in ('','0','nan') else ""}
+                        {("<b>💡 هامش:</b> " + str(r.get('هامش الأمان%',''))) if r.get('هامش الأمان%') and str(r.get('هامش الأمان%','')) not in ('','0','nan') else ""}
                     </div>
                     <details style='margin-top:6px;font-size:12px'>
                         <summary>أسباب الإشارة 🔍</summary>
@@ -1580,10 +1580,12 @@ with tab_backtest:
                 if not atr or atr == 0: continue
                 t1, t2, stop, t1_pct, t2_pct, _ = calc_targets_and_sl(entry, atr, confidence)
 
-                # النتيجة في اليوم التالي
-                next_close = closes[i]
-                next_high  = highs[i]
-                next_low   = lows[i]
+                # النتيجة خلال 3 أيام (بدل يوم واحد فقط)
+                # نبحث في أقرب 3 أيام بعد الإشارة
+                fwd_days = min(3, len(closes) - i - 1)
+                next_high  = max(highs[i:i+fwd_days+1]) if fwd_days > 0 else highs[i]
+                next_low   = min(lows[i:i+fwd_days+1])  if fwd_days > 0 else lows[i]
+                next_close = closes[i+fwd_days]          if fwd_days > 0 else closes[i]
                 actual_chg = round((next_close - price) / price * 100, 2)
 
                 hit_t2   = next_high >= t2
@@ -1593,13 +1595,13 @@ with tab_backtest:
                 # وقت التحقيق (بالأيام)
                 days_to_target = None
                 if hit_t2 or hit_t1:
-                    # نبحث عن أقرب يوم حقق الهدف (حتى 5 أيام)
-                    for fwd in range(1, min(6, len(closes)-i)):
+                    # نحدد في أي يوم من الـ 3 أيام تحقق الهدف
+                    for fwd in range(0, fwd_days+1):
                         if i + fwd < len(highs):
                             if hit_t2 and highs[i+fwd] >= t2:
-                                days_to_target = fwd; break
+                                days_to_target = fwd + 1; break
                             elif hit_t1 and highs[i+fwd] >= t1:
-                                days_to_target = fwd; break
+                                days_to_target = fwd + 1; break
 
                 if hit_t2:
                     outcome = "✅ هدف 2"; pnl_pct = t2_pct
@@ -1671,10 +1673,13 @@ with tab_backtest:
             else:
                 df_show_bt = df_bt.copy()
 
-            total_sig = len(df_show_bt)
-            buy_sig   = len(df_show_bt[df_show_bt["نوع الإشارة"].isin(["strong","normal"])])
-            won_bt    = df_show_bt["ناجحة"].sum()
-            succ_rate = round(won_bt/total_sig*100, 1) if total_sig > 0 else 0
+            total_sig  = len(df_show_bt)
+            buy_sig    = len(df_show_bt[df_show_bt["نوع الإشارة"].isin(["strong","normal"])])
+            won_bt     = df_show_bt["ناجحة"].sum()
+            # نسبة النجاح على المكتملة فقط (هدف أو Stop) — "لم يصل" محايدة
+            completed_bt = df_show_bt[df_show_bt["النتيجة"] != "⏳ لم يصل"]
+            pending_bt   = len(df_show_bt) - len(completed_bt)
+            succ_rate  = round(won_bt/len(completed_bt)*100, 1) if len(completed_bt) > 0 else 0
             hit_t2_bt = len(df_show_bt[df_show_bt["النتيجة"]=="✅ هدف 2"])
             hit_t1_bt = len(df_show_bt[df_show_bt["النتيجة"].str.contains("هدف 1",na=False)])
             hit_stop_bt = len(df_show_bt[df_show_bt["النتيجة"]=="❌ Stop Loss"])
@@ -1691,8 +1696,9 @@ with tab_backtest:
             m1,m2,m3,m4 = st.columns(4)
             m1.metric("إجمالي الإشارات", total_sig)
             m2.metric("ناجحة", int(won_bt))
-            m3.metric("نسبة النجاح", f"{succ_rate}%", delta=f"+{succ_rate-50:.1f}% عن العشوائي")
-            m4.metric("BUY إشارات", buy_sig)
+            m3.metric("نسبة النجاح*", f"{succ_rate}%", delta=f"+{succ_rate-50:.1f}% عن العشوائي")
+            m4.metric("⏳ معلقة (لم تصل)", pending_bt)
+            st.caption(f"*النسبة محسوبة على {len(completed_bt)} إشارة مكتملة فقط (وصلت هدف أو Stop) — المعلقة تحتاج أكثر من يوم واحد")
 
             m5,m6,m7,m8 = st.columns(4)
             m5.metric("✅ وصل هدف 2", hit_t2_bt)
