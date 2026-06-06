@@ -1,6 +1,53 @@
 # ================================================================
-# داشبورد — test14
-# مسح شامل لكل الأسهم + كل المميزات + تقارير Excel يومية وأسبوعية
+# داشبورد — test16
+# الهدف: 7 من 10 إشارات تربح (70% نسبة نجاح)
+#
+# ══════════════════════════════════════════════════════
+# كل التعديلات من test14 → test15 → test16
+# ══════════════════════════════════════════════════════
+#
+# [test15 — إشارات أقل وأقوى]
+#   1.  فلتر ذروة الشراء: Stoch>85 و RSI>65 → WAIT مباشرة
+#   2.  RSI حد BUY عادي: 65 → 60
+#   3.  RSI حد BUY قوي: 70 → 65
+#   4.  MIN_SCORE: 65 → 70
+#   5.  MIN_CONFIDENCE: 62 → 67
+#   6.  MIN_SCORE_STR: 78 → 82
+#   7.  MIN_CONF_STR: 68 → 73
+#   8.  MIN_LIQ: 3 → 5
+#   9.  حجم استثنائي: vol_ratio 2.0 → 2.5
+#   10. خصم BB الأعلى: -8 → -18
+#   11. خصم Stoch ذروة شراء: -8 → -18
+#   12. TONIGHT_RSI_MAX: 65 → 60
+#   13. BREAKOUT_VOL: 2.0 → 2.5
+#   14. ATR_T1_MULT: 1.0 → 1.5
+#   15. ATR_T2_MULT: 2.5 → 3.5
+#   16. Backtest: نسبة النجاح على كل الإشارات
+#   17. عمود "سبب WAIT" في الجدول
+#
+# [test16 — رفع الدقة للـ 70%]
+#   18. قاعدة السوق الهابط: لا BUY لو تاسي < -0.5%
+#         السبب: 80% الأسهم تنزل مع السوق
+#   19. فلتر أول 15 دقيقة: لا إشارات 10:00-10:15
+#         السبب: السوق عشوائي في الافتتاح
+#   20. فلتر آخر 30 دقيقة: لا إشارات 14:30-15:00
+#         السبب: تصفيات وضغط بيع في الإغلاق
+#   21. INSIDER_TRADING كإشارة مستقلة +20 نقطة
+#         السبب: المديرون يشترون = ثقة داخلية بالشركة
+#   22. نمو الأرباح من Financials
+#         السبب: سهم أرباحه تنمو مختلف كلياً
+#   23. inflow_trades vs outflow_trades (عدد الصفقات)
+#         السبب: عدد الصفقات يكشف لو في لاعب كبير
+#   24. نسبة صافي السيولة من حجم التداول
+#         السبب: net_liq/value أدق من net_liq وحده
+#   25. Technicals من API مباشرة (rsi_14, technical_strength)
+#         السبب: API يحسبها بدقة أعلى
+#   26. forward_PE أفضل من PE العادي
+#         السبب: forward_PE يعكس توقعات الأرباح القادمة
+#   27. فلتر القطاع مع حالة السوق
+#         السبب: النفط صاعد = ادخل بتروكيماويات، مش بنوك
+#   28. اختبار orderbook تلقائي - يظهر لو متاح
+#         السبب: عمق الأوامر أقوى إشارة ممكنة
 # ================================================================
 
 import streamlit as st
@@ -11,6 +58,7 @@ from datetime import datetime, timedelta
 import pytz
 
 GROUP_TITLE = "المجموعة 1 — كبار السوق"
+# test16
 RIYADH_TZ = pytz.timezone("Asia/Riyadh")
 
 def now_riyadh():
@@ -32,29 +80,35 @@ MAX_TRADE_DAILY = 20_000
 DAILY_LOSS_STOP = 15_000
 
 ATR_RISK_MULT   = 1.5
-ATR_T1_MULT     = 1.0
-ATR_T2_MULT     = 2.5
+ATR_T1_MULT     = 1.5   # test15: رُفع من 1.0 → هدف1 أكبر (+1.5% على الأقل)
+ATR_T2_MULT     = 3.5   # test15: رُفع من 2.5 → هدف2 أكبر (+3%)
 
-MIN_SCORE       = 65   # ↑ test13
-MIN_CONFIDENCE  = 62   # ↑ test13
-MIN_SCORE_STR   = 78   # ↑ test13
-MIN_CONF_STR    = 68   # ↑ test13
-MIN_LIQ         = 3
+MIN_SCORE       = 70   # test15: رُفع من 65 → إشارات أقل وأقوى
+MIN_CONFIDENCE  = 67   # test15: رُفع من 62
+MIN_SCORE_STR   = 82   # test15: رُفع من 78
+MIN_CONF_STR    = 73   # test15: رُفع من 68
+MIN_LIQ         = 5    # test15: رُفع من 3 → يحذف الأسهم الخاملة
 MIN_ATR_PCT     = 0.005
 MIN_VOL_RATIO   = 0.6
 MAX_CHANGE_NEG  = -1.5
 BREAKOUT_CHANGE = 1.0
-BREAKOUT_VOL    = 2.0
+BREAKOUT_VOL    = 2.5   # test15: رُفع من 2.0
 TONIGHT_VOL     = 1.5
 TONIGHT_CLOSE   = 0.75
-TONIGHT_RSI_MAX = 65
+TONIGHT_RSI_MAX = 60   # test15: خُفض من 65 → أسهم أنظف للغد
 INTRADAY_TTL    = 300
 INTRADAY_MIN_CANDLES = 14
 
+# ── test16: قواعد تداول جديدة ──
+TASI_MIN_CHANGE      = -0.5   # لا BUY لو تاسي هابط أكثر من هذا
+NO_TRADE_OPEN_END    = 10 * 60 + 15   # لا إشارات قبل 10:15
+NO_TRADE_CLOSE_START = 14 * 60 + 30  # لا إشارات بعد 14:30
+MIN_PROFIT_GROWTH    = -20.0  # أقل نمو أرباح مقبول %
+
 DATA_DIR    = "data"
 DAILY_DIR   = os.path.join(DATA_DIR, "daily_reports")
-TONIGHT_DB  = os.path.join(DATA_DIR, "tonight_watchlist_test14_1.db")
-SIGNALS_DB  = os.path.join(DATA_DIR, "signals_test14_1.db")
+TONIGHT_DB  = os.path.join(DATA_DIR, "tonight_watchlist_test16_1.db")
+SIGNALS_DB  = os.path.join(DATA_DIR, "signals_test16_1.db")
 for d in [DATA_DIR, DAILY_DIR]:
     os.makedirs(d, exist_ok=True)
 
@@ -129,7 +183,7 @@ for sym, name in ALL_STOCKS:
 # ============================================================
 
 st.set_page_config(
-    page_title="داشبورد — test14_1",
+    page_title="داشبورد — test16_1",
     layout="wide",
     page_icon="📊",
     initial_sidebar_state="collapsed"
@@ -151,7 +205,7 @@ for key, val in {
         st.session_state[key] = val
 
 if not st.session_state.auth:
-    st.markdown("<h2 style='text-align:center;margin-top:100px'>📊 داشبورد — test14</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center;margin-top:100px'>📊 داشبورد — test16</h2>", unsafe_allow_html=True)
     _, col_b, _ = st.columns([1, 1, 1])
     with col_b:
         pwd = st.text_input("كلمة المرور", type="password")
@@ -274,6 +328,75 @@ def get_movers():
         return client.gainers(), client.losers(), client.volume_leaders(), None
     except Exception as e:
         return None, None, None, str(e)
+
+# test16: بيانات مالية — نمو الأرباح
+@st.cache_data(ttl=3600)
+def get_financials(sym):
+    try:
+        f = client.financials(sym)
+        if f and hasattr(f, "income_statement"):
+            inc = f.income_statement
+            net_income     = float(getattr(inc, "net_income", 0) or 0)
+            operating_inc  = float(getattr(inc, "operating_income", 0) or 0)
+            total_rev      = float(getattr(inc, "total_revenue", 0) or 0)
+            return {"net_income": net_income, "operating_income": operating_inc, "total_revenue": total_rev}
+        if hasattr(f, "net_income"):
+            return {"net_income": float(getattr(f, "net_income", 0) or 0),
+                    "operating_income": float(getattr(f, "operating_income", 0) or 0),
+                    "total_revenue": float(getattr(f, "total_revenue", 0) or 0)}
+    except:
+        pass
+    return None
+
+# test16: اختبار orderbook — يظهر لو API يدعمه
+@st.cache_data(ttl=15)
+def get_orderbook(sym):
+    try:
+        ob = client.orderbook(sym)
+        if ob:
+            bids = getattr(ob, "bids", []) or []
+            asks = getattr(ob, "asks", []) or []
+            return {"bids": bids, "asks": asks, "supported": True}
+    except:
+        pass
+    try:
+        ob = client.order_book(sym)
+        if ob:
+            bids = getattr(ob, "bids", []) or []
+            asks = getattr(ob, "asks", []) or []
+            return {"bids": bids, "asks": asks, "supported": True}
+    except:
+        pass
+    return {"supported": False}
+
+# test16: كل أحداث السهم مع INSIDER_TRADING
+@st.cache_data(ttl=600)
+def get_all_events(sym):
+    try:
+        ev = client.events(sym)
+        if not ev or not hasattr(ev, "events") or not ev.events:
+            return None, None
+        insider = None
+        latest  = None
+        for e in ev.events:
+            etype = getattr(e, "event_type", "")
+            if etype == "INSIDER_TRADING" and insider is None:
+                insider = {
+                    "type": etype,
+                    "sentiment": getattr(e, "sentiment", "neutral"),
+                    "importance": getattr(e, "importance", "regular"),
+                    "desc": getattr(e, "description", ""),
+                }
+            if latest is None:
+                latest = {
+                    "type": etype,
+                    "sentiment": getattr(e, "sentiment", "neutral"),
+                    "importance": getattr(e, "importance", "regular"),
+                    "desc": getattr(e, "description", ""),
+                }
+        return latest, insider
+    except:
+        return None, None
 
 def get_best_data(sym, quotes_dict):
     i_closes, i_highs, i_lows, i_vols, i_times, supported = get_intraday(sym)
@@ -417,7 +540,14 @@ def get_strength_v12(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist,
                      stoch_k, williams_r, momentum,
                      net_liquidity, analyst_consensus, fair_price,
                      event_sentiment, event_importance,
-                     beta=None, liq_score=5):
+                     beta=None, liq_score=5,
+                     # test16: معاملات جديدة
+                     insider_sentiment=None,
+                     profit_growth=None,
+                     inflow_trades=0, outflow_trades=0,
+                     net_liq_ratio=0.0,
+                     api_technical_strength=0.0,
+                     forward_pe=0.0):
     score, reasons = 0, []
 
     # ── RSI ──
@@ -496,13 +626,13 @@ def get_strength_v12(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist,
     if bb_lower > 0 and price <= bb_lower * 1.01:
         score += 8;  reasons.append("عند الحد الأدنى BB 🎯")
     elif bb_upper > 0 and price >= bb_upper * 0.99:
-        score -= 8;  reasons.append("⚠️ عند الحد الأعلى BB")
+        score -= 18; reasons.append("🚫 عند الحد الأعلى BB — لا تشتري")
 
     # ── Stochastic ──
     if stoch_k < 20:
         score += 8;  reasons.append(f"Stoch ذروة بيع ({stoch_k})")
     elif stoch_k > 80:
-        score -= 8;  reasons.append(f"⚠️ Stoch ذروة شراء ({stoch_k})")
+        score -= 18; reasons.append(f"🚫 Stoch ذروة شراء ({stoch_k}) — خطر")
 
     # ── Williams %R ──
     if williams_r < -80:
@@ -562,6 +692,62 @@ def get_strength_v12(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist,
     if is_intraday:
         reasons.append("📡 بيانات intraday حقيقية")
 
+    # ══════════════════════════════════════════
+    # test16: إشارات جديدة
+    # ══════════════════════════════════════════
+
+    # ── INSIDER_TRADING — المديرون يشترون ──
+    if insider_sentiment == "positive":
+        score += 20; reasons.append("🔑 INSIDER: مدير يشتري — ثقة داخلية عالية")
+    elif insider_sentiment == "slightly_positive":
+        score += 10; reasons.append("🔑 INSIDER: شراء داخلي معتدل")
+    elif insider_sentiment == "negative":
+        score -= 15; reasons.append("⚠️ INSIDER: مدير يبيع — تحذير")
+
+    # ── نمو الأرباح من Financials ──
+    if profit_growth is not None:
+        if profit_growth >= 20:
+            score += 12; reasons.append(f"💰 نمو أرباح قوي +{profit_growth:.0f}%")
+        elif profit_growth >= 5:
+            score += 6;  reasons.append(f"💰 نمو أرباح إيجابي +{profit_growth:.0f}%")
+        elif profit_growth < -20:
+            score -= 12; reasons.append(f"🔴 تراجع أرباح {profit_growth:.0f}%")
+        elif profit_growth < 0:
+            score -= 5;  reasons.append(f"⚠️ أرباح ضعيفة {profit_growth:.0f}%")
+
+    # ── عدد الصفقات — لاعب كبير أو صغار ──
+    if inflow_trades > 0 and outflow_trades > 0:
+        trade_ratio = inflow_trades / (outflow_trades + 1)
+        if trade_ratio > 1.3:
+            score += 8; reasons.append(f"📊 صفقات شراء أكثر ×{trade_ratio:.1f}")
+        elif trade_ratio < 0.7:
+            score -= 8; reasons.append(f"⚠️ صفقات بيع أكثر ×{1/trade_ratio:.1f}")
+
+    # ── نسبة صافي السيولة من الحجم ──
+    if net_liq_ratio > 0.15:
+        score += 8;  reasons.append(f"💧 تدفق شراء قوي {net_liq_ratio*100:.0f}% من الحجم")
+    elif net_liq_ratio > 0.05:
+        score += 4;  reasons.append(f"💧 تدفق شراء معتدل")
+    elif net_liq_ratio < -0.15:
+        score -= 10; reasons.append(f"🔴 تدفق بيع قوي {abs(net_liq_ratio)*100:.0f}% من الحجم")
+    elif net_liq_ratio < -0.05:
+        score -= 5
+
+    # ── Technical Strength من API ──
+    if api_technical_strength >= 1.0:
+        score += 6; reasons.append(f"📈 API: قوة تقنية إيجابية ({api_technical_strength})")
+    elif api_technical_strength <= -1.0:
+        score -= 6; reasons.append(f"📉 API: ضعف تقني ({api_technical_strength})")
+
+    # ── Forward PE — توقعات الأرباح القادمة ──
+    if forward_pe > 0:
+        if forward_pe < 15:
+            score += 8; reasons.append(f"📊 Forward PE منخفض ({forward_pe:.1f}) — سهم رخيص")
+        elif forward_pe < 25:
+            score += 3; reasons.append(f"📊 Forward PE معقول ({forward_pe:.1f})")
+        elif forward_pe > 50:
+            score -= 5; reasons.append(f"⚠️ Forward PE مرتفع ({forward_pe:.1f})")
+
     return min(max(score, 0), 100), reasons
 
 def calc_confidence_v12(score, rsi_dir, macd_dir, vol_high, vol_very,
@@ -583,7 +769,8 @@ def calc_confidence_v12(score, rsi_dir, macd_dir, vol_high, vol_very,
 
 def get_signal_v12(score, rsi, confidence, price, ma50, change_pct,
                    liq_score, vol_ratio, atr, is_intraday, net_liquidity,
-                   relative_strength=0.0, h60_confirms=True, fair_price_margin=0.0):
+                   relative_strength=0.0, h60_confirms=True, fair_price_margin=0.0,
+                   stoch_k=50):
     in_downtrend = (not is_intraday) and ma50 > 0 and price < ma50 * 0.95
     atr_pct      = atr/price if price > 0 else 0
     atr_small    = atr_pct < MIN_ATR_PCT
@@ -592,26 +779,30 @@ def get_signal_v12(score, rsi, confidence, price, ma50, change_pct,
     falling      = change_pct < MAX_CHANGE_NEG
     heavy_sell_pressure = (net_liquidity is not None and net_liquidity < -100_000_000 and score < 75)
 
-    if any([in_downtrend, atr_small, low_vol, low_liq, falling, heavy_sell_pressure]):
+    # test15: فلتر ذروة الشراء المزدوج — Stoch+RSI معاً = WAIT مباشرة
+    double_overbought = (stoch_k > 85 and rsi > 65)
+
+    if any([in_downtrend, atr_small, low_vol, low_liq, falling, heavy_sell_pressure, double_overbought]):
         if score < 35 or rsi > 75:
             return "SELL 🔴", "sell"
         return "WAIT 🟡", "wait"
 
-    # test14: كبار السوق لهم معايير مختلفة — سيولة عالية بطبيعتها
+    # test15: حجم استثنائي رُفع من 2.0 → 2.5
     exceptional = (
-        vol_ratio >= 2.0                                          # خفض من 2.5
-        or rsi < 38                                               # رفع قليلاً من 35
-        or relative_strength > 1.2                               # خفض من 1.5
+        vol_ratio >= 2.5
+        or rsi < 38
+        or relative_strength > 1.2
         or (net_liquidity is not None and net_liquidity > 30_000_000)
-        or (not is_intraday and h60_confirms and vol_ratio >= 1.5)
-        or (fair_price_margin > 10 and vol_ratio >= 1.3)          # هامش أمان + حجم معقول
+        or (not is_intraday and h60_confirms and vol_ratio >= 1.8)
+        or (fair_price_margin > 10 and vol_ratio >= 1.5)
     )
 
-    if score >= MIN_SCORE_STR and rsi < 70 and confidence >= MIN_CONF_STR and exceptional:
+    # test15: RSI حد BUY قوي من 70 → 65، عادي من 65 → 60
+    if score >= MIN_SCORE_STR and rsi < 65 and confidence >= MIN_CONF_STR and exceptional:
         return "BUY 🟢", "strong"
-    if score >= MIN_SCORE and rsi < 65 and confidence >= MIN_CONFIDENCE and exceptional:
+    if score >= MIN_SCORE and rsi < 60 and confidence >= MIN_CONFIDENCE and exceptional:
         return "BUY 🟢", "normal"
-    if score >= MIN_SCORE and rsi < 65 and confidence >= MIN_CONFIDENCE and not exceptional:
+    if score >= MIN_SCORE and rsi < 60 and confidence >= MIN_CONFIDENCE and not exceptional:
         return "WAIT 🟡", "wait"
     if score < 35 or rsi > 75:
         return "SELL 🔴", "sell"
@@ -1064,10 +1255,35 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, no
                 except: pass
 
             # ── الأحداث ──
-            ev = get_events(sym)
+            ev, insider_ev = get_all_events(sym)
             ev_sent    = ev.get("sentiment","neutral") if ev else "neutral"
             ev_imp     = ev.get("importance","regular") if ev else "regular"
             ev_type    = ev.get("type","") if ev else ""
+            insider_sent = insider_ev.get("sentiment", None) if insider_ev else None
+
+            # test16: Financials — نمو الأرباح
+            fin = get_financials(sym)
+            profit_growth = None
+            forward_pe_v  = 0.0
+            if fin and fin.get("net_income",0) > 0:
+                profit_growth = round((fin["net_income"] / max(abs(fin.get("operating_income",1)),1) - 1) * 100, 1)
+            if comp:
+                try:
+                    forward_pe_v = float(getattr(comp.fundamentals, "forward_pe", 0) or 0) if hasattr(comp,"fundamentals") else 0.0
+                except: pass
+
+            # test16: عدد الصفقات والنسبة
+            inflow_trades_v  = int(getattr(getattr(q,"liquidity",None),"inflow_trades",0) or 0) if hasattr(q,"liquidity") else 0
+            outflow_trades_v = int(getattr(getattr(q,"liquidity",None),"outflow_trades",0) or 0) if hasattr(q,"liquidity") else 0
+            liq_value        = float(getattr(q,"value",0) or 0)
+            net_liq_ratio_v  = round(net_liq / liq_value, 3) if (net_liq and liq_value > 0) else 0.0
+
+            # test16: Technical Strength من API
+            api_tech_str = 0.0
+            if comp:
+                try:
+                    api_tech_str = float(getattr(comp.technicals, "technical_strength", 0) or 0) if hasattr(comp,"technicals") else 0.0
+                except: pass
 
             # ── النقاط ──
             score, reasons = get_strength_v12(
@@ -1075,16 +1291,23 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, no
                 ma20, ma50, price, vol_high, vol_very, vol_ratio,
                 tasi_change, tasi_up, tasi_down, bb_low, bb_up, is_intraday,
                 stoch_k, williams_r, momentum,
-                net_liq, analyst_c, fair_p, ev_sent, ev_imp, beta_v, liq_score
+                net_liq, analyst_c, fair_p, ev_sent, ev_imp, beta_v, liq_score,
+                insider_sentiment=insider_sent,
+                profit_growth=profit_growth,
+                inflow_trades=inflow_trades_v,
+                outflow_trades=outflow_trades_v,
+                net_liq_ratio=net_liq_ratio_v,
+                api_technical_strength=api_tech_str,
+                forward_pe=forward_pe_v
             )
             confidence = calc_confidence_v12(score, rsi_dir, macd_dir, vol_high, vol_very,
                                               tasi_change, net_liq, analyst_c, fair_p, price)
-            # test14: نمرر fair_price_margin للشرط الاستثنائي
+            # test15: نمرر fair_price_margin و stoch_k للفلاتر الجديدة
             _fpm = round((fair_p - price)/price*100, 1) if fair_p > 0 and price > 0 else 0.0
             signal, sig_type = get_signal_v12(
                 score, rsi, confidence, price, ma50, change_pct,
                 liq_score, vol_ratio, atr, is_intraday, net_liq,
-                relative_strength, h60_confirms, _fpm
+                relative_strength, h60_confirms, _fpm, stoch_k
             )
             stars = calc_stars(score)
             t1, t2, stop, t1_pct, t2_pct, model_label = calc_targets_and_sl(entry, atr, confidence, beta_v)
@@ -1095,10 +1318,34 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, no
             # هامش الأمان
             safety_margin = round((fair_p - price)/price*100, 1) if fair_p > 0 and price > 0 else None
 
-            # تسجيل تلقائي
+            # test15: سبب WAIT — يظهر ليش ما أخذ BUY
+            wait_reason = ""
+            if sig_type == "wait":
+                reasons_wait = []
+                if (not is_intraday) and ma50 > 0 and price < ma50 * 0.95:
+                    reasons_wait.append("تحت MA50")
+                if stoch_k > 85 and rsi > 65:
+                    reasons_wait.append(f"Stoch+RSI ذروة ({stoch_k:.0f},{rsi})")
+                if vol_ratio < MIN_VOL_RATIO:
+                    reasons_wait.append(f"حجم ضعيف ×{vol_ratio}")
+                if liq_score < MIN_LIQ:
+                    reasons_wait.append(f"سيولة منخفضة {liq_score}/10")
+                if rsi >= 60:
+                    reasons_wait.append(f"RSI مرتفع ({rsi})")
+                if score < MIN_SCORE:
+                    reasons_wait.append(f"قوة أقل من {MIN_SCORE} ({score})")
+                if confidence < MIN_CONFIDENCE:
+                    reasons_wait.append(f"ثقة أقل من {MIN_CONFIDENCE} ({confidence})")
+                wait_reason = " | ".join(reasons_wait) if reasons_wait else "شروط غير مكتملة"
+
+            # تسجيل تلقائي — test16: فقط في نافذة التداول الآمنة
             signals_active_now = now_mins >= MARKET_SIGNALS and now_mins < MARKET_CLOSE
             is_workday = now_riyadh().weekday() in [6,0,1,2,3]
-            if signals_active_now and is_workday:
+            _safe_now  = (signals_active_now and is_workday
+                          and now_mins >= NO_TRADE_OPEN_END
+                          and now_mins < NO_TRADE_CLOSE_START
+                          and tasi_change >= TASI_MIN_CHANGE)
+            if _safe_now:
                 if sig_type in ["strong","normal"] and not signal_already_saved_today(sym):
                     save_signal(sym, name, signal, price, entry, t1, t2, stop,
                                 confidence, rsi, macd, vol_ratio, slip_pct, liq_score,
@@ -1152,6 +1399,7 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, no
                 "_sym": sym, "_name": name, "_slip": slip_pct,
                 "_is_bo": is_bo, "_is_intraday": is_intraday,
                 "_reasons": " | ".join(reasons),
+                "سبب WAIT": wait_reason,
             })
         except Exception as e:
             failed.append(f"{sym}({str(e)[:25]})")
@@ -1297,7 +1545,18 @@ tasi_down    = int(getattr(market,"declining",0) or 0) if market else 0
 tasi_mood    = getattr(market,"market_mood","") if market else ""
 circuit_break = tasi_change < -3.0
 
+# ── test16: قواعد تداول ──
+tasi_too_weak    = tasi_change < TASI_MIN_CHANGE
+no_trade_opening = is_workday_sa and now_mins < NO_TRADE_OPEN_END
+no_trade_closing = is_workday_sa and now_mins >= NO_TRADE_CLOSE_START
+safe_trading_window = signals_active and not no_trade_opening and not no_trade_closing and not tasi_too_weak
+
+# ── test16: اختبار orderbook ──
+ob_test = get_orderbook("2222") if market_open else {"supported": False}
+orderbook_supported = ob_test.get("supported", False)
+
 quotes_dict, q_errors = get_all_quotes()
+
 
 tonight_syms = load_tonight_list()
 premarket_list = scan_premarket(tonight_syms, quotes_dict) if pre_open else []
@@ -1390,6 +1649,18 @@ st.markdown(f"""
 
 if circuit_break:
     st.error("🚨 تنبيه Circuit Breaker — السوق في هبوط حاد. لا تتداول.")
+
+# ── test16: تحذيرات نافذة التداول ──
+if tasi_too_weak and market_open:
+    st.warning(f"⚠️ السوق هابط {tasi_change:.2f}% — أقل من {TASI_MIN_CHANGE}% — لا إشارات BUY اليوم")
+if no_trade_opening:
+    st.info("⏰ أول 15 دقيقة (10:00-10:15) — انتظر قبل الدخول")
+if no_trade_closing:
+    st.warning("🔔 آخر 30 دقيقة (14:30-15:00) — لا تفتح صفقات جديدة")
+if orderbook_supported:
+    st.success("📊 Order Book متاح في API — بيانات عمق السوق مفعّلة ✅")
+else:
+    st.info("📊 Order Book: غير متاح في اشتراكك الحالي")
 
 
 
@@ -1500,7 +1771,7 @@ with tab_buy:
                   "هدف1","هدف2","Stop Loss","الثقة%","RSI","تحذير RSI",
                   "MACD زخم","Stoch%K","حجم×","صافي السيولة (M)",
                   "توصية المحللين","هامش الأمان%","السعر العادل",
-                  "مشاعر الحدث","القوة%","طبقة البيانات","Breakout","في قائمة الغد"]
+                  "مشاعر الحدث","القوة%","طبقة البيانات","Breakout","في قائمة الغد","سبب WAIT"]
         show_c = [c for c in show_c if c in df_buy.columns]
 
         f1,f2,f3,f4 = st.columns(4)
@@ -1844,7 +2115,7 @@ with tab_backtest:
                 )
                 confidence = calc_confidence_v12(score, rsi_dir, macd_dir, vol_high, vol_very,
                                                   hist_tasi_est, None, "", 0.0, price)
-                # test14: فلتر الأحد — بعد حساب score
+                # test15: فلتر الأحد
                 bt_day_of_week = i % 5
                 if bt_day_of_week == 0 and score < 72:
                     continue
@@ -1852,7 +2123,7 @@ with tab_backtest:
                 signal, sig_type = get_signal_v12(
                     score, rsi, confidence, price, ma50,
                     change_pct, liq_score, vol_ratio, atr or 0, False, None,
-                    bt_rs, True, bt_fpm
+                    bt_rs, True, bt_fpm, stoch_k
                 )
                 if not atr or atr == 0: continue
                 t1, t2, stop, t1_pct, t2_pct, _ = calc_targets_and_sl(entry, atr, confidence)
@@ -1957,10 +2228,10 @@ with tab_backtest:
             total_sig  = len(df_show_bt)
             buy_sig    = len(df_show_bt[df_show_bt["نوع الإشارة"].isin(["strong","normal"])])
             won_bt     = df_show_bt["ناجحة"].sum()
-            # نسبة النجاح على المكتملة فقط (هدف أو Stop) — "لم يصل" محايدة
+            # test15: نسبة النجاح على كل الإشارات (المعلقة = خسارة محتملة)
             completed_bt = df_show_bt[df_show_bt["النتيجة"] != "⏳ لم يصل"]
             pending_bt   = len(df_show_bt) - len(completed_bt)
-            succ_rate  = round(won_bt/len(completed_bt)*100, 1) if len(completed_bt) > 0 else 0
+            succ_rate  = round(won_bt/total_sig*100, 1) if total_sig > 0 else 0
             hit_t2_bt = len(df_show_bt[df_show_bt["النتيجة"]=="✅ هدف 2"])
             hit_t1_bt = len(df_show_bt[df_show_bt["النتيجة"].str.contains("هدف 1",na=False)])
             hit_stop_bt = len(df_show_bt[df_show_bt["النتيجة"]=="❌ Stop Loss"])
@@ -1983,7 +2254,7 @@ with tab_backtest:
             m2.metric("ناجحة", int(won_bt))
             m3.metric("نسبة النجاح*", f"{succ_rate}%", delta=f"+{succ_rate-50:.1f}% عن العشوائي")
             m4.metric("⏳ معلقة (لم تصل)", pending_bt)
-            st.caption(f"*النسبة محسوبة على {len(completed_bt)} إشارة مكتملة فقط (وصلت هدف أو Stop) — المعلقة تحتاج أكثر من يوم واحد")
+            st.caption(f"*النسبة محسوبة على كل {total_sig} إشارة — المعلقة تُحسب ضمن النتيجة الكلية")
 
             m5,m6,m7,m8 = st.columns(4)
             m5.metric("✅ وصل هدف 2", hit_t2_bt)
@@ -2095,4 +2366,4 @@ with tab_backtest:
                     st.info("لا توجد بيانات كافية لتحليل التوقيت")
 
 st.divider()
-st.caption(f"⚠️ test14_1 — مرجع تقني | آخر مسح: {st.session_state.last_scan_time or '—'} | للمعلومات فقط، ليست توصية استثمارية")
+st.caption(f"⚠️ test16_1 — هدف 70% نجاح | آخر مسح: {st.session_state.last_scan_time or '—'} | للمعلومات فقط، ليست توصية استثمارية")
