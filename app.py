@@ -1,5 +1,5 @@
 # ================================================================
-# داشبورد — test13
+# داشبورد — test14
 # مسح شامل لكل الأسهم + كل المميزات + تقارير Excel يومية وأسبوعية
 # ================================================================
 
@@ -53,8 +53,8 @@ INTRADAY_MIN_CANDLES = 14
 
 DATA_DIR    = "data"
 DAILY_DIR   = os.path.join(DATA_DIR, "daily_reports")
-TONIGHT_DB  = os.path.join(DATA_DIR, "tonight_watchlist_test13_1.db")
-SIGNALS_DB  = os.path.join(DATA_DIR, "signals_test13_1.db")
+TONIGHT_DB  = os.path.join(DATA_DIR, "tonight_watchlist_test14_1.db")
+SIGNALS_DB  = os.path.join(DATA_DIR, "signals_test14_1.db")
 for d in [DATA_DIR, DAILY_DIR]:
     os.makedirs(d, exist_ok=True)
 
@@ -129,7 +129,7 @@ for sym, name in ALL_STOCKS:
 # ============================================================
 
 st.set_page_config(
-    page_title="داشبورد — test13_1",
+    page_title="داشبورد — test14_1",
     layout="wide",
     page_icon="📊",
     initial_sidebar_state="collapsed"
@@ -151,7 +151,7 @@ for key, val in {
         st.session_state[key] = val
 
 if not st.session_state.auth:
-    st.markdown("<h2 style='text-align:center;margin-top:100px'>📊 داشبورد — test13</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center;margin-top:100px'>📊 داشبورد — test14</h2>", unsafe_allow_html=True)
     _, col_b, _ = st.columns([1, 1, 1])
     with col_b:
         pwd = st.text_input("كلمة المرور", type="password")
@@ -583,7 +583,7 @@ def calc_confidence_v12(score, rsi_dir, macd_dir, vol_high, vol_very,
 
 def get_signal_v12(score, rsi, confidence, price, ma50, change_pct,
                    liq_score, vol_ratio, atr, is_intraday, net_liquidity,
-                   relative_strength=0.0, h60_confirms=True):
+                   relative_strength=0.0, h60_confirms=True, fair_price_margin=0.0):
     in_downtrend = (not is_intraday) and ma50 > 0 and price < ma50 * 0.95
     atr_pct      = atr/price if price > 0 else 0
     atr_small    = atr_pct < MIN_ATR_PCT
@@ -597,12 +597,14 @@ def get_signal_v12(score, rsi, confidence, price, ma50, change_pct,
             return "SELL 🔴", "sell"
         return "WAIT 🟡", "wait"
 
+    # test14: كبار السوق لهم معايير مختلفة — سيولة عالية بطبيعتها
     exceptional = (
-        vol_ratio >= 2.5
-        or rsi < 35
-        or relative_strength > 1.5
-        or (net_liquidity is not None and net_liquidity > 50_000_000)
-        or (not is_intraday and h60_confirms and vol_ratio >= 1.8)
+        vol_ratio >= 2.0                                          # خفض من 2.5
+        or rsi < 38                                               # رفع قليلاً من 35
+        or relative_strength > 1.2                               # خفض من 1.5
+        or (net_liquidity is not None and net_liquidity > 30_000_000)
+        or (not is_intraday and h60_confirms and vol_ratio >= 1.5)
+        or (fair_price_margin > 10 and vol_ratio >= 1.3)          # هامش أمان + حجم معقول
     )
 
     if score >= MIN_SCORE_STR and rsi < 70 and confidence >= MIN_CONF_STR and exceptional:
@@ -1077,10 +1079,12 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, no
             )
             confidence = calc_confidence_v12(score, rsi_dir, macd_dir, vol_high, vol_very,
                                               tasi_change, net_liq, analyst_c, fair_p, price)
+            # test14: نمرر fair_price_margin للشرط الاستثنائي
+            _fpm = round((fair_p - price)/price*100, 1) if fair_p > 0 and price > 0 else 0.0
             signal, sig_type = get_signal_v12(
                 score, rsi, confidence, price, ma50, change_pct,
                 liq_score, vol_ratio, atr, is_intraday, net_liq,
-                relative_strength, h60_confirms
+                relative_strength, h60_confirms, _fpm
             )
             stars = calc_stars(score)
             t1, t2, stop, t1_pct, t2_pct, model_label = calc_targets_and_sl(entry, atr, confidence, beta_v)
@@ -1105,6 +1109,15 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, no
                                 1, int(is_intraday))
 
             data_layer = "📡 Intraday" if is_intraday else "📅 يومي"
+            # test14: جودة الوقت داخل الجلسة
+            if is_intraday:
+                if 615 <= now_mins <= 720:   session_q = "🟢 أفضل وقت (10:15-12:00)"
+                elif 780 <= now_mins <= 870: session_q = "🟢 جيد (13:00-14:30)"
+                elif 600 <= now_mins <= 615: session_q = "🟡 افتتاح — تحفظ"
+                elif 870 <= now_mins <= 900: session_q = "🔴 إغلاق — لا تدخل"
+                else:                        session_q = "🟡 متوسط"
+            else:
+                session_q = "📅 بعد إغلاق"
             rsi_warn   = "🔴 احذر!" if rsi > 70 else ("🟡 قريب" if rsi > 65 else "✅")
 
             data.append({
@@ -1795,8 +1808,15 @@ with tab_backtest:
                 # فلتر: تجاهل لو السهم هابط في آخر 3 أيام (بديل عن TASI التاريخي)
                 if skip_down and i >= 4:
                     avg_3day_chg = (closes[i-1] - closes[i-4]) / closes[i-4] * 100
-                    if avg_3day_chg < -2.0:  # هابط أكثر من 2% في 3 أيام
+                    if avg_3day_chg < -2.0:
                         continue
+
+                # test14: الأحد = أول يوم أسبوع تاسي — تحفظ إضافي
+                # نحسب رقم اليوم التقريبي (5 أيام تداول/أسبوع)
+                bt_day_of_week = i % 5  # 0=الأحد تقريباً في التاريخي
+                sunday_caution = (bt_day_of_week == 0 and score < 72)
+                if sunday_caution:
+                    continue
 
                 rsi      = calc_rsi(c)
                 rsi_dir  = calc_rsi_direction(c)
@@ -1814,17 +1834,27 @@ with tab_backtest:
                 slip_pct, _ = calc_slippage(liq_score)
                 entry = round(price * (1 + slip_pct), 2)
 
+                # test14: حساب relative_strength تاريخياً
+                # نقارن أداء السهم بمتوسط أداء الأسهم الأخرى في نفس الفترة
+                # تقدير بسيط: change_pct vs متوسط السوق المقدّر
+                hist_tasi_est = (closes[i-1] - closes[max(0,i-6)]) / closes[max(0,i-6)] * 100 / 5 if i > 5 else 0
+                bt_rs = change_pct - hist_tasi_est
+
+                # fair price margin من البيانات التاريخية (0 لأنه غير متاح)
+                bt_fpm = 0.0
+
                 score, reasons = get_strength_v12(
                     change_pct, rsi, rsi_dir, macd, macd_sig, macd_hist, macd_dir,
                     ma20, ma50, price, vol_high, vol_very, vol_ratio,
-                    0.0, 0, 0, bb_low, bb_up, False,
+                    hist_tasi_est, 0, 0, bb_low, bb_up, False,
                     stoch_k, williams_r_v, mom, None, "", 0.0, "neutral", "regular", 1.0, liq_score
                 )
                 confidence = calc_confidence_v12(score, rsi_dir, macd_dir, vol_high, vol_very,
-                                                  0.0, None, "", 0.0, price)
+                                                  hist_tasi_est, None, "", 0.0, price)
                 signal, sig_type = get_signal_v12(
                     score, rsi, confidence, price, ma50,
-                    change_pct, liq_score, vol_ratio, atr or 0, False, None
+                    change_pct, liq_score, vol_ratio, atr or 0, False, None,
+                    bt_rs, True, bt_fpm
                 )
                 if not atr or atr == 0: continue
                 t1, t2, stop, t1_pct, t2_pct, _ = calc_targets_and_sl(entry, atr, confidence)
@@ -2067,4 +2097,4 @@ with tab_backtest:
                     st.info("لا توجد بيانات كافية لتحليل التوقيت")
 
 st.divider()
-st.caption(f"⚠️ test13_1 — مرجع تقني | آخر مسح: {st.session_state.last_scan_time or '—'} | للمعلومات فقط، ليست توصية استثمارية")
+st.caption(f"⚠️ test14_1 — مرجع تقني | آخر مسح: {st.session_state.last_scan_time or '—'} | للمعلومات فقط، ليست توصية استثمارية")
