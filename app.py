@@ -2642,3 +2642,4 @@ with tab_backtest_u:
 
 st.divider()
 st.caption(f"⚠️ test16 الموحد — كل المجموعات — هدف 70% نجاح | آخر مسح: {st.session_state.last_scan_time or '—'} | للمعلومات فقط، ليست توصية استثمارية")
+ر
