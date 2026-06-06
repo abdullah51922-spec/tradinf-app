@@ -46,8 +46,12 @@
 #         السبب: forward_PE يعكس توقعات الأرباح القادمة
 #   27. فلتر القطاع مع حالة السوق
 #         السبب: النفط صاعد = ادخل بتروكيماويات، مش بنوك
-#   28. اختبار orderbook تلقائي - يظهر لو متاح
-#         السبب: عمق الأوامر أقوى إشارة ممكنة
+#   28. اختبار orderbook تلقائي - يجرب دائماً بغض النظر عن وقت السوق
+#         السبب: كان مقيد بـ market_open فيظهر "غير متاح" خطأً وقت الإغلاق
+#   29. تحليل Bid/Ask Spread — spread < 0.1% = سيولة ممتازة
+#         السبب: spread ضيق = سهم نشط وسهل التداول بدون خسارة
+#   30. حجم مبكر× — مقارنة الحجم الحالي بالمتوقع حسب الوقت
+#         السبب: حجم ضعف المتوقع في أول ساعة = إشارة اختراق قوية
 # ================================================================
 
 import streamlit as st
@@ -1235,6 +1239,19 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, no
             liq_outflow = float(getattr(getattr(q,"liquidity",None),"outflow_value",0) or 0) if hasattr(q,"liquidity") else 0
             net_liq     = liq_inflow - liq_outflow if (liq_inflow or liq_outflow) else None
 
+            # test16: تحليل Bid/Ask Spread — ضيق = سيولة عالية
+            spread      = round(ask_price - bid_price, 3) if (ask_price > 0 and bid_price > 0) else 0
+            spread_pct  = round(spread / price * 100, 3) if price > 0 else 0
+            spread_ok   = spread_pct < 0.1  # spread أقل من 0.1% = سيولة ممتازة
+
+            # test16: حجم أول 30 دقيقة مقارنة بالمتوسط اليومي
+            today_volume   = float(getattr(q, "volume", 0) or 0)
+            avg_daily_vol  = sum(volumes[-20:]) / 20 if len(volumes) >= 20 else 0
+            time_elapsed   = max(now_mins - MARKET_OPEN, 1) if market_open else 360
+            expected_vol   = avg_daily_vol * (time_elapsed / 360)
+            vol_surge      = round(today_volume / expected_vol, 1) if expected_vol > 0 else 0
+            vol_surge_flag = vol_surge >= 2.0 and market_open  # حجم ضعف المتوقع = إشارة قوية
+
             # ── بيانات الشركة ──
             comp = get_company_info(sym)
             analyst_c  = ""
@@ -1391,6 +1408,10 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, no
                 "القوة%": score, "طبقة البيانات": data_layer, "عدد الشمعات": n_candles,
                 "Breakout": "🚨 نعم" if is_bo else "",
                 "في قائمة الغد": "🌙 نعم" if in_tonight else "",
+                "Spread%": spread_pct if spread_pct > 0 else "",
+                "سيولة Spread": "✅ ممتاز" if spread_ok else "⚠️ واسع",
+                "حجم مبكر×": vol_surge if market_open else "",
+                "🚀 surge": "🚀 نعم" if vol_surge_flag else "",
                 # حقول داخلية
                 "_signal_type": sig_type, "_confidence": confidence,
                 "_liq_score": liq_score, "_entry": entry,
@@ -1551,8 +1572,8 @@ no_trade_opening = is_workday_sa and now_mins < NO_TRADE_OPEN_END
 no_trade_closing = is_workday_sa and now_mins >= NO_TRADE_CLOSE_START
 safe_trading_window = signals_active and not no_trade_opening and not no_trade_closing and not tasi_too_weak
 
-# ── test16: اختبار orderbook ──
-ob_test = get_orderbook("2222") if market_open else {"supported": False}
+# ── test16: اختبار orderbook — يجرب دائماً بغض النظر عن وقت السوق ──
+ob_test = get_orderbook("2222")
 orderbook_supported = ob_test.get("supported", False)
 
 quotes_dict, q_errors = get_all_quotes()
@@ -1769,7 +1790,8 @@ with tab_buy:
 
         show_c = ["الرمز","الاسم","السعر","التغيير%","النجوم","الإشارة",
                   "هدف1","هدف2","Stop Loss","الثقة%","RSI","تحذير RSI",
-                  "MACD زخم","Stoch%K","حجم×","صافي السيولة (M)",
+                  "MACD زخم","Stoch%K","حجم×","حجم مبكر×","🚀 surge",
+                  "صافي السيولة (M)","Spread%","سيولة Spread",
                   "توصية المحللين","هامش الأمان%","السعر العادل",
                   "مشاعر الحدث","القوة%","طبقة البيانات","Breakout","في قائمة الغد","سبب WAIT"]
         show_c = [c for c in show_c if c in df_buy.columns]
