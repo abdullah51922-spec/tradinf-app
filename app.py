@@ -1106,7 +1106,6 @@ def save_signal(sym, name, signal_type, price, entry, t1, t2, stop,
               sym, name, signal_type, price, entry, t1, t2,
               stop, confidence, rsi, macd, vol, slip, liq,
               is_breakout, is_intraday))
-              is_breakout, is_intraday))
         conn.commit()
     st.session_state.signal_log.append({
         "الوقت": now.strftime("%H:%M"), "الرمز": sym, "الاسم": name,
