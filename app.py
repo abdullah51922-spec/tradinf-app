@@ -221,7 +221,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-API_KEY = st.secrets["API_KEY"]
+API_KEY = "shmk_live_96ab6bb9e4cbc219ba23d1d8836d5f13766b6fb43450e245"
 
 for key, val in {
     "auth": False,
