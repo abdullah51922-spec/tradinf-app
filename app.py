@@ -1,5 +1,5 @@
 # ================================================================
-# داشبورد — test12
+# داشبورد — test13
 # مسح شامل لكل الأسهم + كل المميزات + تقارير Excel يومية وأسبوعية
 # ================================================================
 
@@ -10,7 +10,7 @@ import sqlite3, os, io
 from datetime import datetime, timedelta
 import pytz
 
-GROUP_TITLE = "المجموعة 2 — الصناعات والأسمنت"
+GROUP_TITLE = "المجموعة 1 — كبار السوق"
 RIYADH_TZ = pytz.timezone("Asia/Riyadh")
 
 def now_riyadh():
@@ -35,10 +35,10 @@ ATR_RISK_MULT   = 1.5
 ATR_T1_MULT     = 1.0
 ATR_T2_MULT     = 2.5
 
-MIN_SCORE       = 55
-MIN_CONFIDENCE  = 50
-MIN_SCORE_STR   = 70
-MIN_CONF_STR    = 60
+MIN_SCORE       = 65   # ↑ test13
+MIN_CONFIDENCE  = 62   # ↑ test13
+MIN_SCORE_STR   = 78   # ↑ test13
+MIN_CONF_STR    = 68   # ↑ test13
 MIN_LIQ         = 3
 MIN_ATR_PCT     = 0.005
 MIN_VOL_RATIO   = 0.6
@@ -53,8 +53,8 @@ INTRADAY_MIN_CANDLES = 14
 
 DATA_DIR    = "data"
 DAILY_DIR   = os.path.join(DATA_DIR, "daily_reports")
-TONIGHT_DB  = os.path.join(DATA_DIR, "tonight_watchlist_test12_2.db")
-SIGNALS_DB  = os.path.join(DATA_DIR, "signals_test12_2.db")
+TONIGHT_DB  = os.path.join(DATA_DIR, "tonight_watchlist_test13_1.db")
+SIGNALS_DB  = os.path.join(DATA_DIR, "signals_test13_1.db")
 for d in [DATA_DIR, DAILY_DIR]:
     os.makedirs(d, exist_ok=True)
 
@@ -63,54 +63,59 @@ for d in [DATA_DIR, DAILY_DIR]:
 # ============================================================
 
 
-# ── المجموعة 2 — الصناعات والمواد والأسمنت ──
-# أسهم المواد الأساسية والصناعات والأسمنت
+# ── المجموعة 1 — كبار السوق (بنوك + طاقة + بتروكيماويات + اتصالات) ──
+# 50 سهم الأعلى حجم تداولاً وسيولة في السوق السعودي
 # ─────────────────────────────────────────────────────
 ALL_STOCKS = [
-    # ── المواد الأساسية والصناعة ──
-    ("1201","شركة تكوين المتطورة للصناعات"),
-    ("1210","شركة الصناعات الكيميائية الأساسية"),
-    ("1213","شركة نسيج العالمية التجارية"),
-    ("1214","شركة الحسن غازي إبراهيم شاكر"),
-    ("1301","شركة إتحاد مصانع الأسلاك"),("1302","شركة بوان"),
-    ("1303","شركة الصناعات الكهربائية"),("1304","شركة اليمامة للصناعات الحديدية"),
-    ("1320","الشركة السعودية لأنابيب الصلب"),("1321","شركة أنابيب الشرق المتكاملة"),
-    ("1322","شركة المصانع الكبرى للتعدين"),("1323","يو سي آي سي"),
-    ("1324","شركة صالح عبدالعزيز الراشد وأولاده"),
-    ("2040","شركة الخزف السعودي"),
-    ("2070","الدوائية"),
-    ("2080","شركة الغاز والتصنيع الأهلية"),
-    ("2090","شركة الجبس الأهلية"),
-    ("2100","شركة وفرة للصناعة والتنمية"),
-    ("2110","شركة الكابلات السعودية"),
-    ("2130","الشركة السعودية للتنمية الصناعية"),("2140","شركة أيان للإستثمار"),
-    ("2150","شركة الصناعات الزجاجية الوطنية"),("2160","شركة أميانتيت العربية السعودية"),
-    ("2170","شركة اللجين"),("2180","شركة تصنيع مواد التعبئة والتغليف"),
-    ("2190","شركة البنى التحتية المستدامة القابضة"),("2200","الشركة العربية للأنابيب"),
-    ("2220","الشركة الوطنية لتصنيع وسبك المعادن"),
-    ("2223","شركة أرامكو السعودية لزيوت الأساس"),
-    ("2240","شركة صناعات البناء المتقدمة"),("2250","المجموعة السعودية للإستثمار الصناعي"),
-    ("2300","الشركة السعودية لصناعة الورق"),
-    ("2320","شركة البابطين للطاقة والإتصالات"),
-    ("2340","شركة ارتيكس للاستثمار الصناعي"),
-    ("2360","الشركة السعودية لإنتاج الأنابيب الفخارية"),
-    ("2370","شركة الشرق الأوسط للكابلات المتخصصة"),
-    # ── الأسمنت ──
-    ("3002","شركة أسمنت نجران"),("3003","أسمنت المدينة"),
-    ("3004","شركة أسمنت المنطقة الشمالية"),("3005","شركة أسمنت ام القرى"),
-    ("3007","شركة زهرة الواحة للتجارة"),("3008","شركة الكثيري القابضة"),
-    ("3010","شركة الأسمنت العربية"),("3020","شركة أسمنت اليمامة"),
-    ("3030","شركة الأسمنت السعودية"),("3040","شركة أسمنت القصيم"),
-    ("3050","شركة أسمنت المنطقة الجنوبية"),("3060","شركة أسمنت ينبع"),
-    ("3080","شركة أسمنت المنطقة الشرقية"),("3090","شركة أسمنت تبوك"),
-    ("3091","شركة أسمنت الجوف"),("3092","شركة أسمنت الرياض"),
-    # ── الصحة والأدوية ──
-    ("4002","شركة المواساة للخدمات الطبية"),("4004","شركة دله للخدمات الصحية"),
-    ("4005","الشركة الوطنية للرعاية الطبية"),("4007","شركة الحمادي القابضة"),
-    ("4014","شركة دار المعدات الطبية"),
-    ("4015","شركة مصنع جمجوم للأدوية"),("4016","شركة الشرق الأوسط للصناعات الدوائية"),
-    ("4017","فقيه الطبية"),("4018","الموسى"),("4019","الشركة الطبية التخصصية"),
-    ("4021","شركة مجمع المركز الكندي الطبي"),
+    # ── البنوك (أعلى سيولة في السوق) ──
+    ("1010","بنك الرياض"),("1020","بنك الجزيرة"),("1030","البنك السعودي للإستثمار"),
+    ("1050","بي اس اف"),("1060","البنك السعودي الأول"),("1080","العربي"),
+    ("1120","مصرف الراجحي"),("1140","بنك البلاد"),("1150","مصرف الإنماء"),
+    ("1180","البنك الأهلي السعودي"),("1111","شركة مجموعة تداول السعودية القابضة"),
+    # ── الطاقة والنفط (القيادي) ──
+    ("2222","شركة الزيت العربية السعودية"),
+    ("5110","الشركة السعودية للطاقة"),
+    ("2082","شركة أكوا باور"),
+    # ── البتروكيماويات الكبرى ──
+    ("2010","الشركة السعودية للصناعات الأساسية"),
+    ("2020","سابك للمغذيات الزراعية"),
+    ("2350","شركة كيان السعودية للبتروكيماويات"),
+    ("2380","شركة رابغ للتكرير والبتروكيماويات"),
+    ("2290","شركة ينبع الوطنية للبتروكيماويات"),
+    ("2330","الشركة المتقدمة للبتروكيماويات"),
+    ("2310","شركة الصحراء العالمية للبتروكيماويات"),
+    ("2001","شركة كيمائيات الميثانول"),
+    ("2030","شركة المصافي العربية السعودية"),
+    ("2230","الشركة الكيميائية السعودية القابضة"),
+    ("2210","شركة نماء للكيماويات"),
+    ("2381","شركة الحفر العربية"),
+    # ── الاتصالات والتقنية ──
+    ("7010","شركة الإتصالات السعودية"),("7020","شركة إتحاد إتصالات"),
+    ("7030","شركة الإتصالات المتنقلة السعودية"),("7040","قو للإتصالات"),
+    ("7205","شركة دار البلد لحلول الأعمال"),
+    # ── التعدين والمواد الكبرى ──
+    ("1211","شركة التعدين العربية السعودية"),
+    ("1212","مجموعة أسترا الصناعية"),
+    ("1202","مبكو"),
+    ("2081","شركة الخريف لتقنية المياه والطاقة"),
+    ("2060","شركة التصنيع الوطنية"),
+    ("2382","شركة أديس القابضة"),
+    # ── التمويل ──
+    ("1182","شركة أملاك العالمية للتمويل"),("1183","شركة سهل للتمويل"),
+    # ── صحة وأدوية كبرى ──
+    ("4013","مجموعة الدكتور سليمان الحبيب"),
+    ("4009","شركة الشرق الأوسط للرعاية الصحية"),
+    ("4164","شركة النهدي الطبية"),
+    # ── تجزئة كبرى ──
+    ("4190","شركة جرير للتسويق"),
+    ("4240","سينومي ريتيل"),
+    ("4001","شركة أسواق عبدالله العثيم"),
+    # ── عقارات كبرى ──
+    ("4300","شركة دار الأركان للتطوير العقاري"),
+    ("4230","شركة البحر الأحمر العالمية"),
+    ("4220","إعمار المدينة الإقتصادية"),
+    ("2280","شركة المراعي"),
+    ("2050","مجموعة صافولا"),
 ]
 
 seen_s = set()
@@ -124,7 +129,7 @@ for sym, name in ALL_STOCKS:
 # ============================================================
 
 st.set_page_config(
-    page_title="داشبورد — test12_2",
+    page_title="داشبورد — test13_1",
     layout="wide",
     page_icon="📊",
     initial_sidebar_state="collapsed"
@@ -146,7 +151,7 @@ for key, val in {
         st.session_state[key] = val
 
 if not st.session_state.auth:
-    st.markdown("<h2 style='text-align:center;margin-top:100px'>📊 داشبورد — test12</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center;margin-top:100px'>📊 داشبورد — test13</h2>", unsafe_allow_html=True)
     _, col_b, _ = st.columns([1, 1, 1])
     with col_b:
         pwd = st.text_input("كلمة المرور", type="password")
@@ -474,6 +479,19 @@ def get_strength_v12(change_pct, rsi, rsi_dir, macd, macd_signal, macd_hist,
     elif tasi_breadth > 1.3:
         score += 5;  reasons.append("🟢 غالبية الأسهم صاعدة")
 
+    # ── القوة النسبية vs التاسي (test13) ──
+    rs = change_pct - tasi_change
+    if rs > 2.0:
+        score += 12; reasons.append(f"قوة نسبية ممتازة +{rs:.1f}% 💪")
+    elif rs > 1.0:
+        score += 7;  reasons.append(f"قوة نسبية جيدة +{rs:.1f}%")
+    elif rs > 0.3:
+        score += 3;  reasons.append(f"قوة نسبية إيجابية")
+    elif rs < -1.5:
+        score -= 8;  reasons.append(f"⚠️ ضعف نسبي {rs:.1f}%")
+    elif rs < -0.5:
+        score -= 4
+
     # ── Bollinger ──
     if bb_lower > 0 and price <= bb_lower * 1.01:
         score += 8;  reasons.append("عند الحد الأدنى BB 🎯")
@@ -564,14 +582,14 @@ def calc_confidence_v12(score, rsi_dir, macd_dir, vol_high, vol_very,
     return min(max(round((score*0.70)+bonus), 0), 100)
 
 def get_signal_v12(score, rsi, confidence, price, ma50, change_pct,
-                   liq_score, vol_ratio, atr, is_intraday, net_liquidity):
+                   liq_score, vol_ratio, atr, is_intraday, net_liquidity,
+                   relative_strength=0.0, h60_confirms=True):
     in_downtrend = (not is_intraday) and ma50 > 0 and price < ma50 * 0.95
     atr_pct      = atr/price if price > 0 else 0
     atr_small    = atr_pct < MIN_ATR_PCT
     low_vol      = vol_ratio < MIN_VOL_RATIO
     low_liq      = liq_score < MIN_LIQ
     falling      = change_pct < MAX_CHANGE_NEG
-    # فلتر إضافي: سيولة صافية سلبية قوية مع score متوسط
     heavy_sell_pressure = (net_liquidity is not None and net_liquidity < -100_000_000 and score < 75)
 
     if any([in_downtrend, atr_small, low_vol, low_liq, falling, heavy_sell_pressure]):
@@ -579,10 +597,20 @@ def get_signal_v12(score, rsi, confidence, price, ma50, change_pct,
             return "SELL 🔴", "sell"
         return "WAIT 🟡", "wait"
 
-    if score >= MIN_SCORE_STR and rsi < 70 and confidence >= MIN_CONF_STR:
+    exceptional = (
+        vol_ratio >= 2.5
+        or rsi < 35
+        or relative_strength > 1.5
+        or (net_liquidity is not None and net_liquidity > 50_000_000)
+        or (not is_intraday and h60_confirms and vol_ratio >= 1.8)
+    )
+
+    if score >= MIN_SCORE_STR and rsi < 70 and confidence >= MIN_CONF_STR and exceptional:
         return "BUY 🟢", "strong"
-    if score >= MIN_SCORE and rsi < 65 and confidence >= MIN_CONFIDENCE:
+    if score >= MIN_SCORE and rsi < 65 and confidence >= MIN_CONFIDENCE and exceptional:
         return "BUY 🟢", "normal"
+    if score >= MIN_SCORE and rsi < 65 and confidence >= MIN_CONFIDENCE and not exceptional:
+        return "WAIT 🟡", "wait"
     if score < 35 or rsi > 75:
         return "SELL 🔴", "sell"
     return "WAIT 🟡", "wait"
@@ -612,6 +640,53 @@ def calc_position_size(entry, stop):
     if risk <= 0: return 0, 0
     shares = int(min(CAPITAL_DAILY, MAX_TRADE_DAILY) / entry)
     return shares, round(shares*entry, 2)
+
+def calc_consolidation(closes, period=10):
+    if len(closes) < period: return 0.0
+    recent = closes[-period:]
+    low_p  = min(recent)
+    if low_p <= 0: return 0.0
+    rng = (max(recent) - low_p) / low_p * 100
+    if rng < 2.0:  return 1.0
+    elif rng < 3.5: return 0.7
+    elif rng < 5.0: return 0.4
+    return 0.0
+
+def calc_intraday_volume_pattern(volumes, times):
+    if not volumes or not times or len(volumes) != len(times):
+        return 1.0, 1.0, False
+    try:
+        open_vol, mid_vol, close_vol = 0.0, 0.0, 0.0
+        for v, t in zip(volumes, times):
+            hour = int(str(t).split(":")[0]) if ":" in str(t) else 0
+            if 10 <= hour < 11:      open_vol  += v
+            elif 11 <= hour < 13:    mid_vol   += v
+            elif 13 <= hour < 15:    close_vol += v
+        total = open_vol + mid_vol + close_vol
+        if total <= 0: return 1.0, 1.0, False
+        close_ratio = close_vol / (total / 3) if total > 0 else 1.0
+        open_ratio  = open_vol  / (total / 3) if total > 0 else 1.0
+        accumulation = close_ratio > 1.3 and close_vol > open_vol * 1.3
+        return round(close_ratio, 2), round(open_ratio, 2), accumulation
+    except:
+        return 1.0, 1.0, False
+
+def get_60min_trend(sym):
+    try:
+        c60, h60, l60, v60 = get_historical_60min(sym)
+        if len(c60) < 10: return 0, 50.0, False
+        rsi60   = calc_rsi(c60)
+        ma10_60 = calc_ma(c60, 10)
+        macd60, msig60, _ = calc_macd(c60)
+        price60 = c60[-1]
+        above_ma = price60 > ma10_60 if ma10_60 > 0 else False
+        if rsi60 > 55 and above_ma and macd60 > msig60:
+            return 1, rsi60, above_ma
+        elif rsi60 < 45 or (not above_ma and macd60 < msig60):
+            return -1, rsi60, above_ma
+        return 0, rsi60, above_ma
+    except:
+        return 0, 50.0, False
 
 def check_breakout(sym, q, closes, volumes, now_mins, is_intraday=False):
     try:
@@ -941,7 +1016,26 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, no
 
             liq_score = calc_liquidity_score(vol_ratio, avg_vol)
             slip_pct, slip_label = calc_slippage(liq_score)
-            entry = round(price*(1+slip_pct), 2)
+
+            relative_strength = change_pct - tasi_change
+
+            bid_price = float(getattr(q, "bid", 0) or 0)
+            ask_price = float(getattr(q, "ask", 0) or 0)
+            if ask_price > 0 and bid_price > 0 and price > 0:
+                entry = round(ask_price * (1 + slip_pct * 0.5), 2)
+            else:
+                entry = round(price * (1 + slip_pct), 2)
+
+            h60_trend, h60_rsi, h60_above_ma = get_60min_trend(sym)
+            h60_confirms = (h60_trend >= 0)
+
+            i_closes_full, i_highs_full, i_lows_full, i_vols_full, i_times_full, _ = get_intraday(sym)
+            close_vol_ratio, open_vol_ratio, accumulation = calc_intraday_volume_pattern(
+                i_vols_full, i_times_full
+            )
+
+            h_closes_raw, _, _, _ = get_historical(sym)
+            consol_score = calc_consolidation(h_closes_raw) if h_closes_raw else 0.0
 
             # ── بيانات Quote السيولة ──
             liq_inflow  = float(getattr(getattr(q,"liquidity",None),"inflow_value",0) or 0) if hasattr(q,"liquidity") else 0
@@ -985,7 +1079,8 @@ def analyze_stocks(stocks_list, quotes_dict, tasi_change, tasi_up, tasi_down, no
                                               tasi_change, net_liq, analyst_c, fair_p, price)
             signal, sig_type = get_signal_v12(
                 score, rsi, confidence, price, ma50, change_pct,
-                liq_score, vol_ratio, atr, is_intraday, net_liq
+                liq_score, vol_ratio, atr, is_intraday, net_liq,
+                relative_strength, h60_confirms
             )
             stars = calc_stars(score)
             t1, t2, stop, t1_pct, t2_pct, model_label = calc_targets_and_sl(entry, atr, confidence, beta_v)
@@ -1686,9 +1781,13 @@ with tab_backtest:
                 return []
             results = []
             start_idx = len(closes) - n_days
+            last_signal_day = -10
             for i in range(start_idx, len(closes) - 1):
                 c = closes[:i]; h = highs[:i]; l = lows[:i]; v = volumes[:i]
                 if len(c) < 30: continue
+
+                if (i - last_signal_day) < 5:
+                    continue
 
                 price      = closes[i-1]
                 change_pct = (closes[i-1] - closes[i-2]) / closes[i-2] * 100 if i > 1 else 0
@@ -1777,6 +1876,7 @@ with tab_backtest:
                     "أيام_للهدف": days_to_target,
                     "ناجحة": 1 if ("✅" in outcome or "🟡" in outcome) else 0,
                 })
+                last_signal_day = i
             return results
         except:
             return []
@@ -1967,4 +2067,4 @@ with tab_backtest:
                     st.info("لا توجد بيانات كافية لتحليل التوقيت")
 
 st.divider()
-st.caption(f"⚠️ test12_2 — مرجع تقني | آخر مسح: {st.session_state.last_scan_time or '—'} | للمعلومات فقط، ليست توصية استثمارية")
+st.caption(f"⚠️ test13_1 — مرجع تقني | آخر مسح: {st.session_state.last_scan_time or '—'} | للمعلومات فقط، ليست توصية استثمارية")
