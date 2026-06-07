@@ -63,6 +63,7 @@ ATR_T2_MULT      = 3.0  # [v1.1] خُفّض من 3.5 → هدف 2 معقول
 MIN_RSI_DIFF     = 3.0  # أقل فرق RSI مقبول لتأكيد الـ divergence
 MIN_PRICE_DIFF   = 0.3  # أقل فرق سعري % مقبول
 MIN_LIQ          = 5    # أقل سيولة مقبولة
+VOL_CONFIRM_MULT  = 1.2  # حجم اليوم لازم > 1.2× المتوسط 20 يوم
 
 # تايم فريمات
 TIMEFRAMES = {
@@ -312,6 +313,23 @@ def calc_atr(highs, lows, closes, period=14):
     return round(sum(trs[-period:]) / period, 4)
 
 
+
+def vol_is_confirmed(volumes, i, mult=None):
+    """
+    حجم التداول عند نقطة الـ divergence لازم أعلى من المتوسط
+    mult: مضاعف المتوسط المطلوب (افتراضي VOL_CONFIRM_MULT)
+    """
+    if mult is None:
+        mult = VOL_CONFIRM_MULT
+    period = 20
+    if i < period:
+        return True, 0.0  # بيانات قليلة — لا نفلتر
+    avg_vol = np.mean(volumes[i-period:i])
+    if avg_vol == 0:
+        return True, 0.0
+    ratio = volumes[i] / avg_vol
+    return ratio >= mult, round(ratio, 2)
+
 def calc_macd(closes, fast=12, slow=26, signal=9):
     """MACD — EMA fast - EMA slow + Signal line"""
     if len(closes) < slow + signal:
@@ -458,10 +476,11 @@ def find_divergences(df):
     if df.empty or len(df) < RSI_PERIOD + LOOKBACK_SWING + LOOKBACK_DIV:
         return []
 
-    closes = df["close"].values
-    highs  = df["high"].values
-    lows   = df["low"].values
-    opens  = df["open"].values if "open" in df.columns else closes.copy()
+    closes  = df["close"].values
+    highs   = df["high"].values
+    lows    = df["low"].values
+    opens   = df["open"].values   if "open"   in df.columns else closes.copy()
+    volumes = df["volume"].values if "volume" in df.columns else np.ones(len(closes))
     rsi    = calc_rsi(closes, RSI_PERIOD)
     atr    = calc_atr(highs, lows, closes, ATR_PERIOD)
 
@@ -484,6 +503,10 @@ def find_divergences(df):
                         pa_name, pa_str = detect_pa_pattern(opens, highs, lows, closes, i)
                         if pa_str == 0:
                             break  # لا نمط = لا إشارة
+                        # ── حجم التداول — شرط إلزامي ──
+                        vol_ok, vol_ratio = vol_is_confirmed(volumes, i)
+                        if not vol_ok:
+                            break  # حجم ضعيف = لا إشارة
                         entry_i = min(i + CONFIRM_CANDLES, n - 1)
                         entry_p = closes[entry_i]
                         sl      = round(entry_p - atr * ATR_SL_MULT, 3)
@@ -511,6 +534,7 @@ def find_divergences(df):
                             "prev_index": j,
                             "pa_pattern": pa_name,
                             "pa_strength":pa_str,
+                            "vol_ratio":  vol_ratio,
                         })
                         break  # أقوى divergence فقط
 
@@ -574,10 +598,11 @@ def backtest_rsi_div(sym, name, df):
     if df.empty or len(df) < RSI_PERIOD + LOOKBACK_SWING * 2 + LOOKBACK_DIV:
         return []
 
-    closes = df["close"].values
-    highs  = df["high"].values
-    lows   = df["low"].values
-    opens  = df["open"].values if "open" in df.columns else closes.copy()
+    closes  = df["close"].values
+    highs   = df["high"].values
+    lows    = df["low"].values
+    opens   = df["open"].values   if "open"   in df.columns else closes.copy()
+    volumes = df["volume"].values if "volume" in df.columns else np.ones(len(closes))
     rsi    = calc_rsi(closes, RSI_PERIOD)
 
     trades = []
@@ -603,6 +628,10 @@ def backtest_rsi_div(sym, name, df):
                         pa_name, pa_str = detect_pa_pattern(opens, highs, lows, closes, i)
                         if pa_str == 0:
                             break  # لا نمط = لا إشارة
+                        # ── حجم التداول — شرط إلزامي ──
+                        vol_ok, vol_ratio = vol_is_confirmed(volumes, i)
+                        if not vol_ok:
+                            break  # حجم ضعيف = لا إشارة
                         entry_i = min(i + CONFIRM_CANDLES, len(closes) - 1)
                         entry_p = closes[entry_i]
                         sl      = entry_p - atr * ATR_SL_MULT
@@ -639,6 +668,7 @@ def backtest_rsi_div(sym, name, df):
                             "النوع":        "Bullish 📈",
                             "نمط PA":       pa_name,
                             "قوة PA":       pa_str,
+                            "حجم×":         vol_ratio,
                             "سعر الدخول":  round(entry_p, 3),
                             "RSI الآن":    round(rsi[i], 1),
                             "RSI السابق":  round(rsi[j], 1),
@@ -750,6 +780,7 @@ def scan_all(tf_key, max_stocks=None):
                     "ATR":            latest["atr"],
                     "pa_pattern":     latest.get("pa_pattern", "—"),
                     "pa_strength":    latest.get("pa_strength", 0),
+                    "vol_ratio":      latest.get("vol_ratio", 0),
                     "_type":          latest["type"],
                 })
         except Exception as e:
@@ -965,7 +996,8 @@ with tab_live:
             card_cls = "div-card-bull" if r["_type"] == "bullish" else "div-card-bear"
             chg_col  = "#16a34a" if r["التغيير%"] >= 0 else "#dc2626"
             pa_info  = f" | PA: {r.get('pa_pattern','—')} (قوة {r.get('pa_strength',0)})" if r.get('pa_pattern') else ""
-            rsi_info = f"RSI الآن: {r['RSI الآن']} | RSI السابق: {r['RSI السابق']} | فرق: +{r['فرق RSI']}{pa_info}"
+            vol_info = f" | حجم×: {r.get('vol_ratio',0)}" if r.get('vol_ratio') else ""
+            rsi_info = f"RSI الآن: {r['RSI الآن']} | RSI السابق: {r['RSI السابق']} | فرق: +{r['فرق RSI']}{pa_info}{vol_info}"
 
             with cols[i % 2]:
                 st.markdown(f"""
@@ -1132,7 +1164,7 @@ with tab_bt:
             "📈 أداء الأسهم", "📊 مقارنة التايم فريمات"
         ])
 
-        show_cols_bt = ["الرمز","الاسم","النوع","نمط PA","قوة PA","سعر الدخول",
+        show_cols_bt = ["الرمز","الاسم","النوع","نمط PA","قوة PA","حجم×","سعر الدخول",
                         "RSI الآن","RSI السابق","فرق RSI",
                         "هدف1%","هدف2%","وقف%",
                         "النتيجة","ربح/خسارة%","شموع_للخروج"]
@@ -1310,4 +1342,4 @@ with tab_settings:
     """)
 
 st.divider()
-st.caption(f"📡 RSI Divergence v1.2 — RSI Div + PA — آخر مسح: {st.session_state.last_scan or '—'} | للمعلومات فقط، ليست توصية استثمارية")
+st.caption(f"📡 RSI Divergence v1.3 — RSI Div + PA + Volume — آخر مسح: {st.session_state.last_scan or '—'} | للمعلومات فقط، ليست توصية استثمارية")
