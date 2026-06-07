@@ -1177,7 +1177,7 @@ with tab_bt:
         bt_tf_label = st.selectbox("التايم فريم:", list(TIMEFRAMES.keys()), key="bt_tf")
         bt_tf_key   = TIMEFRAMES[bt_tf_label]
     with bc2:
-        bt_scope = st.selectbox("النطاق:", ["سريع (15 سهم)", "كل الأسهم (30+)"], key="bt_scope")
+        bt_scope = st.selectbox("النطاق:", ["كل الأسهم (200+ سهم)", "سريع (15 سهم)"], key="bt_scope")
     with bc3:
         bt_type_filter = st.selectbox("نوع Divergence:", ["الكل", "Bullish فقط", "Bearish فقط"], key="bt_type")
 
