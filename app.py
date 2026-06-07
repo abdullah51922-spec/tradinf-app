@@ -357,7 +357,7 @@ def get_intraday_60min(sym):
 
 @st.cache_data(ttl=3600)
 def get_daily(sym):
-    """بيانات يومية"""
+    """بيانات يومية — مع timeout handling"""
     try:
         h = client.historical(sym, from_date="2024-01-01")
         rows = []
@@ -373,6 +373,14 @@ def get_daily(sym):
         return pd.DataFrame(rows) if rows else pd.DataFrame()
     except:
         return pd.DataFrame()
+
+@st.cache_data(ttl=3600)
+def get_daily_batch(syms_tuple):
+    """جلب بيانات مجموعة أسهم مع cache مشترك"""
+    results = {}
+    for sym in syms_tuple:
+        results[sym] = get_daily(sym)
+    return results
 
 def get_data_for_tf(sym, tf_key):
     """جلب البيانات بحسب التايم فريم"""
@@ -1172,19 +1180,27 @@ with tab_bt:
     - يحسب نسبة النجاح، R/R الفعلي، متوسط الشموع للهدف
     """)
 
-    bc1, bc2, bc3 = st.columns(3)
+    bc1, bc2, bc3, bc4 = st.columns(4)
     with bc1:
         bt_tf_label = st.selectbox("التايم فريم:", list(TIMEFRAMES.keys()), key="bt_tf")
         bt_tf_key   = TIMEFRAMES[bt_tf_label]
     with bc2:
-        bt_scope = st.selectbox("النطاق:", ["كل الأسهم (200+ سهم)", "سريع (15 سهم)"], key="bt_scope")
+        bt_scope = st.selectbox("النطاق:", ["كل الأسهم (200+ سهم)", "سريع (50 سهم)", "تجربة (15 سهم)"], key="bt_scope")
     with bc3:
         bt_type_filter = st.selectbox("نوع Divergence:", ["الكل", "Bullish فقط", "Bearish فقط"], key="bt_type")
+    with bc4:
+        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+        st.caption("💡 كل الأسهم = أبطأ لكن أشمل")
 
     run_bt = st.button("🚀 ابدأ Backtest", type="primary")
 
     if run_bt:
-        stocks_bt = UNIQUE_STOCKS[:15] if "سريع" in bt_scope else UNIQUE_STOCKS
+        if "تجربة" in bt_scope:
+            stocks_bt = UNIQUE_STOCKS[:15]
+        elif "50" in bt_scope:
+            stocks_bt = UNIQUE_STOCKS[:50]
+        else:
+            stocks_bt = UNIQUE_STOCKS
         all_bt_trades = []
 
         prog  = st.progress(0)
