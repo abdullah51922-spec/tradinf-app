@@ -1371,7 +1371,23 @@ with tab_bt:
         elif bt_type_filter == "Bearish فقط":
             all_t = [t for t in all_t if "Bearish" in t.get("النوع","")]
 
-        df_bt = pd.DataFrame(all_t)
+        # تنظيف — احذف أي صف ناقص أعمدة أساسية
+        required_cols = ["ناجحة", "النتيجة", "ربح/خسارة%", "شموع_للخروج"]
+        clean_trades = []
+        for t in all_t:
+            if all(k in t for k in required_cols):
+                clean_trades.append(t)
+        
+        if not clean_trades:
+            st.warning("⚠️ لا توجد إشارات — جرب تغيير الإعدادات أو النطاق")
+            st.stop()
+
+        df_bt = pd.DataFrame(clean_trades)
+        # تأكد من وجود كل الأعمدة المطلوبة
+        for col in ["مستوى الدعم","بُعد الدعم%","دعم أسبوعي","نمط PA","قوة PA","حجم×"]:
+            if col not in df_bt.columns:
+                df_bt[col] = ""
+        
         total_t   = len(df_bt)
         won_t     = df_bt["ناجحة"].sum()
         t2_count  = df_bt["النتيجة"].str.contains("هدف 2", na=False).sum()
