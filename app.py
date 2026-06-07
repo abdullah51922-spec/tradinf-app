@@ -442,6 +442,105 @@ def vol_is_confirmed(volumes, i, mult=None):
     ratio = volumes[i] / avg_vol
     return ratio >= mult, round(ratio, 2)
 
+
+# ─────────────────────────────────────────────────────────────
+# 6c. مستويات الدعم والمقاومة — يومي + أسبوعي
+# ─────────────────────────────────────────────────────────────
+
+def calc_weekly_from_daily(closes, highs, lows, opens, volumes, week_size=5):
+    """يبني بيانات أسبوعية من اليومية — كل 5 أيام = أسبوع"""
+    w_closes, w_highs, w_lows, w_opens, w_vols = [], [], [], [], []
+    for i in range(0, len(closes) - week_size + 1, week_size):
+        chunk_c = closes[i:i+week_size]
+        chunk_h = highs[i:i+week_size]
+        chunk_l = lows[i:i+week_size]
+        chunk_o = opens[i:i+week_size]
+        chunk_v = volumes[i:i+week_size]
+        w_closes.append(chunk_c[-1])
+        w_highs.append(max(chunk_h))
+        w_lows.append(min(chunk_l))
+        w_opens.append(chunk_o[0])
+        w_vols.append(sum(chunk_v))
+    return w_closes, w_highs, w_lows, w_opens, w_vols
+
+def find_support_resistance(closes, highs, lows, n_swing=5, lookback=60, tolerance=0.015):
+    """
+    يكتشف مستويات الدعم والمقاومة من البيانات اليومية والأسبوعية
+    - دعم: قيعان تكررت في نفس المنطقة (±tolerance)
+    - مقاومة: قمم تكررت في نفس المنطقة
+    - tolerance: 1.5% تسامح في السعر
+    """
+    if len(closes) < lookback:
+        return [], []
+
+    # نأخذ آخر lookback شمعة
+    c = np.array(closes[-lookback:])
+    h = np.array(highs[-lookback:])
+    l = np.array(lows[-lookback:])
+    n = len(c)
+
+    swing_lows  = []
+    swing_highs = []
+
+    for i in range(n_swing, n - n_swing):
+        # قاع محلي
+        if all(l[i] <= l[i-k] for k in range(1, n_swing+1)) and            all(l[i] <= l[i+k] for k in range(1, n_swing+1)):
+            swing_lows.append(l[i])
+        # قمة محلية
+        if all(h[i] >= h[i-k] for k in range(1, n_swing+1)) and            all(h[i] >= h[i+k] for k in range(1, n_swing+1)):
+            swing_highs.append(h[i])
+
+    def cluster_levels(levels, tol):
+        """يجمع المستويات القريبة في مستوى واحد"""
+        if not levels:
+            return []
+        levels = sorted(levels)
+        clusters = []
+        group = [levels[0]]
+        for lv in levels[1:]:
+            if lv <= group[-1] * (1 + tol):
+                group.append(lv)
+            else:
+                clusters.append(round(np.mean(group), 3))
+                group = [lv]
+        clusters.append(round(np.mean(group), 3))
+        # فقط المستويات اللي تكررت مرتين+
+        return [lv for lv in clusters
+                if sum(1 for x in levels if abs(x - lv) / lv <= tol) >= 2]
+
+    supports    = cluster_levels(swing_lows,  tolerance)
+    resistances = cluster_levels(swing_highs, tolerance)
+
+    return supports, resistances
+
+def price_near_support(price, supports, tolerance=0.015):
+    """
+    هل السعر قريب من مستوى دعم؟
+    يرجع: (True/False, أقرب مستوى, نسبة البعد%)
+    """
+    if not supports or price <= 0:
+        return False, 0.0, 0.0
+    for sup in sorted(supports, key=lambda x: abs(x - price)):
+        dist_pct = (price - sup) / sup * 100
+        # السعر فوق الدعم بـ 0-1.5% = منطقة الدخول
+        if -0.5 <= dist_pct <= tolerance * 100:
+            return True, sup, round(dist_pct, 2)
+    return False, 0.0, 0.0
+
+def price_near_resistance(price, resistances, tolerance=0.015):
+    """هل السعر قريب من مقاومة؟"""
+    if not resistances or price <= 0:
+        return False, 0.0, 0.0
+    for res in sorted(resistances, key=lambda x: abs(x - price)):
+        dist_pct = (price - res) / res * 100
+        if -tolerance * 100 <= dist_pct <= 0.5:
+            return True, res, round(dist_pct, 2)
+    return False, 0.0, 0.0
+
+SR_TOLERANCE = 0.015   # ±1.5% تسامح
+SR_LOOKBACK  = 60      # آخر 60 يوم للـ daily
+SR_WEEKLY_LB = 52      # آخر 52 أسبوع (~سنة) للأسبوعي
+
 def calc_macd(closes, fast=12, slow=26, signal=9):
     """MACD — EMA fast - EMA slow + Signal line"""
     if len(closes) < slow + signal:
@@ -594,7 +693,31 @@ def find_divergences(df):
     opens   = df["open"].values   if "open"   in df.columns else closes.copy()
     volumes = df["volume"].values if "volume" in df.columns else np.ones(len(closes))
     rsi    = calc_rsi(closes, RSI_PERIOD)
+
+    # S/R كاملة مرة واحدة للسهم
+    wc, wh, wl, wo, wv = calc_weekly_from_daily(
+        list(closes), list(highs), list(lows), list(opens), list(volumes)
+    )
+    w_sup_all, w_res_all = find_support_resistance(
+        wc, wh, wl, n_swing=3, lookback=SR_WEEKLY_LB, tolerance=SR_TOLERANCE
+    )
     atr    = calc_atr(highs, lows, closes, ATR_PERIOD)
+
+    # ── حساب الدعم/المقاومة يومي + أسبوعي ──
+    d_supports, d_resistances = find_support_resistance(
+        list(closes), list(highs), list(lows),
+        n_swing=5, lookback=SR_LOOKBACK, tolerance=SR_TOLERANCE
+    )
+    # أسبوعي — نبنيه من اليومي
+    wc, wh, wl, wo, wv = calc_weekly_from_daily(
+        list(closes), list(highs), list(lows), list(opens), list(volumes)
+    )
+    w_supports, w_resistances = find_support_resistance(
+        wc, wh, wl, n_swing=3, lookback=SR_WEEKLY_LB, tolerance=SR_TOLERANCE
+    )
+    # دمج اليومي والأسبوعي
+    all_supports    = sorted(set(d_supports + w_supports))
+    all_resistances = sorted(set(d_resistances + w_resistances))
 
     divs = []
     n = len(closes)
@@ -730,6 +853,19 @@ def backtest_rsi_div(sym, name, df):
                     rsi_higher  = rsi[i]  > rsi[j] + MIN_RSI_DIFF
                     rsi_os      = rsi[j]  < RSI_OS
                     if price_lower and rsi_higher and rsi_os:
+                        # ── S/R يومي لنقطة i ──
+                        d_sup_i, d_res_i = find_support_resistance(
+                            list(closes[:i+1]), list(highs[:i+1]), list(lows[:i+1]),
+                            n_swing=5, lookback=min(SR_LOOKBACK, i),
+                            tolerance=SR_TOLERANCE
+                        )
+                        all_sup_i = sorted(set(d_sup_i + w_sup_all))
+                        near_sup, sup_level, sup_dist = price_near_support(
+                            lows[i], all_sup_i, SR_TOLERANCE
+                        )
+                        if not near_sup:
+                            break  # ليس عند دعم
+                        is_weekly_sup = any(abs(sup_level - ws) / max(ws,1) < 0.01 for ws in w_sup_all)
                         pa_name, pa_str = "", 0
                         vol_ratio = 0.0
                         entry_i = min(i + CONFIRM_CANDLES, len(closes) - 1)
@@ -769,6 +905,9 @@ def backtest_rsi_div(sym, name, df):
                             "نمط PA":       pa_name,
                             "قوة PA":       pa_str,
                             "حجم×":         vol_ratio,
+                            "مستوى الدعم":  round(sup_level, 3),
+                            "بُعد الدعم%":  sup_dist,
+                            "دعم أسبوعي":   "⭐" if is_weekly_sup else "",
                             "سعر الدخول":  round(entry_p, 3),
                             "RSI الآن":    round(rsi[i], 1),
                             "RSI السابق":  round(rsi[j], 1),
@@ -1039,7 +1178,7 @@ with tab_live:
         tf_label = st.selectbox("التايم فريم:", list(TIMEFRAMES.keys()))
         tf_key   = TIMEFRAMES[tf_label]
     with col_scope:
-        scope = st.selectbox("النطاق:", ["أسهم سريعة (15 سهم)", "كل الأسهم (200+ سهم)"])
+        scope = st.selectbox("النطاق:", ["أسهم سريعة (15 سهم)", "كل الأسهم (215 سهم)"])
     with col_run:
         st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
         run_scan = st.button("🔍 مسح الآن", type="primary", use_container_width=True)
@@ -1171,7 +1310,7 @@ with tab_bt:
         bt_tf_label = st.selectbox("التايم فريم:", list(TIMEFRAMES.keys()), key="bt_tf")
         bt_tf_key   = TIMEFRAMES[bt_tf_label]
     with bc2:
-        bt_scope = st.selectbox("النطاق:", ["كل الأسهم (200+ سهم)", "سريع (50 سهم)", "تجربة (15 سهم)"], key="bt_scope")
+        bt_scope = st.selectbox("النطاق:", ["كل الأسهم (215 سهم)", "سريع (50 سهم)", "تجربة (15 سهم)"], key="bt_scope")
     with bc3:
         bt_type_filter = st.selectbox("نوع Divergence:", ["الكل", "Bullish فقط", "Bearish فقط"], key="bt_type")
     with bc4:
@@ -1185,6 +1324,8 @@ with tab_bt:
             stocks_bt = UNIQUE_STOCKS[:15]
         elif "50" in bt_scope:
             stocks_bt = UNIQUE_STOCKS[:50]
+        elif "80" in bt_scope:
+            stocks_bt = UNIQUE_STOCKS[:80]
         else:
             stocks_bt = UNIQUE_STOCKS
         all_bt_trades = []
@@ -1272,8 +1413,8 @@ with tab_bt:
             "📈 أداء الأسهم", "📊 مقارنة التايم فريمات"
         ])
 
-        show_cols_bt = ["الرمز","الاسم","النوع","نمط PA","قوة PA","حجم×","سعر الدخول",
-                        "RSI الآن","RSI السابق","فرق RSI",
+        show_cols_bt = ["الرمز","الاسم","النوع","مستوى الدعم","بُعد الدعم%","دعم أسبوعي",
+                        "سعر الدخول","RSI الآن","RSI السابق","فرق RSI",
                         "هدف1%","هدف2%","وقف%",
                         "النتيجة","ربح/خسارة%","شموع_للخروج"]
         show_cols_bt = [c for c in show_cols_bt if c in df_bt.columns]
@@ -1449,4 +1590,4 @@ with tab_settings:
     """)
 
 st.divider()
-st.caption(f"📡 RSI Divergence v1.0 — RSI Divergence فقط — آخر مسح: {st.session_state.last_scan or '—'} | للمعلومات فقط، ليست توصية استثمارية")
+st.caption(f"📡 RSI Divergence v2.0 — RSI Div + S/R يومي وأسبوعي — آخر مسح: {st.session_state.last_scan or '—'} | للمعلومات فقط، ليست توصية استثمارية")
