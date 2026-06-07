@@ -694,13 +694,22 @@ def find_divergences(df):
     volumes = df["volume"].values if "volume" in df.columns else np.ones(len(closes))
     rsi    = calc_rsi(closes, RSI_PERIOD)
 
-    # S/R كاملة مرة واحدة للسهم
-    wc, wh, wl, wo, wv = calc_weekly_from_daily(
-        list(closes), list(highs), list(lows), list(opens), list(volumes)
-    )
-    w_sup_all, w_res_all = find_support_resistance(
-        wc, wh, wl, n_swing=3, lookback=SR_WEEKLY_LB, tolerance=SR_TOLERANCE
-    )
+    # S/R كاملة مرة واحدة للسهم — يومي + أسبوعي
+    try:
+        wc, wh, wl, wo, wv = calc_weekly_from_daily(
+            list(closes), list(highs), list(lows), list(opens), list(volumes)
+        )
+        w_sup_all, w_res_all = find_support_resistance(
+            wc, wh, wl, n_swing=3, lookback=SR_WEEKLY_LB, tolerance=SR_TOLERANCE
+        )
+        d_sup_all, d_res_all = find_support_resistance(
+            list(closes), list(highs), list(lows),
+            n_swing=5, lookback=SR_LOOKBACK, tolerance=SR_TOLERANCE
+        )
+        all_sup_bt = sorted(set(d_sup_all + w_sup_all))
+    except:
+        w_sup_all, w_res_all = [], []
+        all_sup_bt = []
     atr    = calc_atr(highs, lows, closes, ATR_PERIOD)
 
     # ── حساب الدعم/المقاومة يومي + أسبوعي ──
@@ -853,21 +862,17 @@ def backtest_rsi_div(sym, name, df):
                     rsi_higher  = rsi[i]  > rsi[j] + MIN_RSI_DIFF
                     rsi_os      = rsi[j]  < RSI_OS
                     if price_lower and rsi_higher and rsi_os:
-                        # ── S/R يومي لنقطة i — معلومة إضافية ──
+                        # ── S/R — مبني مسبقاً للسهم كله ──
                         try:
-                            d_sup_i, d_res_i = find_support_resistance(
-                                list(closes[:i+1]), list(highs[:i+1]), list(lows[:i+1]),
-                                n_swing=5, lookback=min(SR_LOOKBACK, i),
-                                tolerance=SR_TOLERANCE
-                            )
-                            all_sup_i = sorted(set(d_sup_i + w_sup_all))
                             near_sup, sup_level, sup_dist = price_near_support(
-                                lows[i], all_sup_i, SR_TOLERANCE
+                                lows[i], all_sup_bt, SR_TOLERANCE
                             )
-                            is_weekly_sup = any(abs(sup_level - ws) / max(ws,1) < 0.01 for ws in w_sup_all) if w_sup_all else False
+                            is_weekly_sup = any(
+                                abs(sup_level - ws) / max(ws, 1) < 0.01
+                                for ws in w_sup_all
+                            ) if (near_sup and w_sup_all) else False
                         except:
                             near_sup, sup_level, sup_dist, is_weekly_sup = False, 0.0, 0.0, False
-                        # لا نحذف الإشارة — S/R معلومة فقط
                         pa_name, pa_str = "", 0
                         vol_ratio = 0.0
                         entry_i = min(i + CONFIRM_CANDLES, len(closes) - 1)
