@@ -59,7 +59,7 @@ RSI_OS           = 35   # RSI ذروة بيع (Bullish Div)
 BULLISH_RSI_MAX  = 45   # [v1.1] RSI الحالي لازم < 45 للـ Bullish — فلتر جودة إضافي
 ATR_SL_MULT      = 1.5  # [v1.1] خُفّض من 2.0 → وقف أضيق = R/R أحسن
 ATR_T1_MULT      = 1.5  # [v1.1] خُفّض من 2.0 → هدف 1 أقرب = يُصاب أكثر
-ATR_T2_MULT      = 4.5  # رُفع من 3.0  # [v1.1] خُفّض من 3.5 → هدف 2 معقول
+ATR_T2_MULT      = 3.0  # [v1.1] خُفّض من 3.5 → هدف 2 معقول
 MIN_RSI_DIFF     = 3.0  # أقل فرق RSI مقبول لتأكيد الـ divergence
 MIN_PRICE_DIFF   = 0.3  # أقل فرق سعري % مقبول
 MIN_LIQ          = 5    # أقل سيولة مقبولة
@@ -484,17 +484,12 @@ def find_divergences(df):
                         pa_name, pa_str = detect_pa_pattern(opens, highs, lows, closes, i)
                         if pa_str == 0:
                             break  # لا نمط = لا إشارة
-                        # ── MACD تأكيد — شرط إلزامي ──
-                        macd_ok, macd_val, sig_val, hist_val = macd_is_bullish(closes, i)
-                        if not macd_ok:
-                            break  # MACD لا يؤكد = لا إشارة
                         entry_i = min(i + CONFIRM_CANDLES, n - 1)
                         entry_p = closes[entry_i]
                         sl      = round(entry_p - atr * ATR_SL_MULT, 3)
                         t1      = round(entry_p + atr * ATR_T1_MULT, 3)
                         t2      = round(entry_p + atr * ATR_T2_MULT, 3)
-                        # إشارة قوية لو PA قوية + MACD إيجابي
-                        sig_label = "BUY ⭐ قوي" if (pa_str >= 2 and hist_val > 0) else "BUY 🟢"
+                        sig_label = "BUY ⭐ قوي" if pa_str >= 2 else "BUY 🟢"
                         divs.append({
                             "type":       "bullish",
                             "signal":     sig_label,
@@ -516,9 +511,6 @@ def find_divergences(df):
                             "prev_index": j,
                             "pa_pattern": pa_name,
                             "pa_strength":pa_str,
-                            "macd":       macd_val,
-                            "macd_signal":sig_val,
-                            "macd_hist":  hist_val,
                         })
                         break  # أقوى divergence فقط
 
@@ -611,10 +603,6 @@ def backtest_rsi_div(sym, name, df):
                         pa_name, pa_str = detect_pa_pattern(opens, highs, lows, closes, i)
                         if pa_str == 0:
                             break  # لا نمط = لا إشارة
-                        # ── MACD — شرط إلزامي ──
-                        macd_ok, macd_val, sig_val, hist_val = macd_is_bullish(closes, i)
-                        if not macd_ok:
-                            break  # MACD لا يؤكد = لا إشارة
                         entry_i = min(i + CONFIRM_CANDLES, len(closes) - 1)
                         entry_p = closes[entry_i]
                         sl      = entry_p - atr * ATR_SL_MULT
@@ -651,8 +639,6 @@ def backtest_rsi_div(sym, name, df):
                             "النوع":        "Bullish 📈",
                             "نمط PA":       pa_name,
                             "قوة PA":       pa_str,
-                            "MACD":         round(macd_val, 4),
-                            "MACD Hist":    round(hist_val, 4),
                             "سعر الدخول":  round(entry_p, 3),
                             "RSI الآن":    round(rsi[i], 1),
                             "RSI السابق":  round(rsi[j], 1),
@@ -764,8 +750,6 @@ def scan_all(tf_key, max_stocks=None):
                     "ATR":            latest["atr"],
                     "pa_pattern":     latest.get("pa_pattern", "—"),
                     "pa_strength":    latest.get("pa_strength", 0),
-                    "macd":           latest.get("macd", 0),
-                    "macd_hist":      latest.get("macd_hist", 0),
                     "_type":          latest["type"],
                 })
         except Exception as e:
@@ -980,9 +964,8 @@ with tab_live:
         for i, r in enumerate(show_res):
             card_cls = "div-card-bull" if r["_type"] == "bullish" else "div-card-bear"
             chg_col  = "#16a34a" if r["التغيير%"] >= 0 else "#dc2626"
-            pa_info   = f" | PA: {r.get('pa_pattern','—')} (قوة {r.get('pa_strength',0)})" if r.get('pa_pattern') else ""
-            macd_info = f" | MACD: {r.get('macd',0):.4f} Hist: {r.get('macd_hist',0):.4f}" if r.get('macd') else ""
-            rsi_info  = f"RSI الآن: {r['RSI الآن']} | RSI السابق: {r['RSI السابق']} | فرق: +{r['فرق RSI']}{pa_info}{macd_info}"
+            pa_info  = f" | PA: {r.get('pa_pattern','—')} (قوة {r.get('pa_strength',0)})" if r.get('pa_pattern') else ""
+            rsi_info = f"RSI الآن: {r['RSI الآن']} | RSI السابق: {r['RSI السابق']} | فرق: +{r['فرق RSI']}{pa_info}"
 
             with cols[i % 2]:
                 st.markdown(f"""
@@ -1149,7 +1132,7 @@ with tab_bt:
             "📈 أداء الأسهم", "📊 مقارنة التايم فريمات"
         ])
 
-        show_cols_bt = ["الرمز","الاسم","النوع","نمط PA","قوة PA","MACD","MACD Hist","سعر الدخول",
+        show_cols_bt = ["الرمز","الاسم","النوع","نمط PA","قوة PA","سعر الدخول",
                         "RSI الآن","RSI السابق","فرق RSI",
                         "هدف1%","هدف2%","وقف%",
                         "النتيجة","ربح/خسارة%","شموع_للخروج"]
@@ -1327,4 +1310,4 @@ with tab_settings:
     """)
 
 st.divider()
-st.caption(f"📡 RSI Divergence v1.3 — RSI Div + PA + MACD — آخر مسح: {st.session_state.last_scan or '—'} | للمعلومات فقط، ليست توصية استثمارية")
+st.caption(f"📡 RSI Divergence v1.2 — RSI Div + PA — آخر مسح: {st.session_state.last_scan or '—'} | للمعلومات فقط، ليست توصية استثمارية")
