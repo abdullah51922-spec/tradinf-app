@@ -59,7 +59,7 @@ RSI_OS           = 35   # RSI ذروة بيع (Bullish Div)
 BULLISH_RSI_MAX  = 45   # [v1.1] RSI الحالي لازم < 45 للـ Bullish — فلتر جودة إضافي
 ATR_SL_MULT      = 1.5  # [v1.1] خُفّض من 2.0 → وقف أضيق = R/R أحسن
 ATR_T1_MULT      = 1.5  # [v1.1] خُفّض من 2.0 → هدف 1 أقرب = يُصاب أكثر
-ATR_T2_MULT      = 3.0  # [v1.1] خُفّض من 3.5 → هدف 2 معقول
+ATR_T2_MULT      = 4.5  # [v1.1] خُفّض من 3.5 → هدف 2 معقول
 MIN_RSI_DIFF     = 3.0  # أقل فرق RSI مقبول لتأكيد الـ divergence
 MIN_PRICE_DIFF   = 0.3  # أقل فرق سعري % مقبول
 MIN_LIQ          = 5    # أقل سيولة مقبولة
