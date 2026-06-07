@@ -326,12 +326,88 @@ def is_swing_high(highs, i, n=LOOKBACK_SWING):
            all(highs[i] >= highs[i+k] for k in range(1, n+1))
 
 # ─────────────────────────────────────────────────────────────
+# 6b. أنماط Price Action — تأكيد إضافي للـ Divergence
+# ─────────────────────────────────────────────────────────────
+
+def detect_pa_pattern(opens, highs, lows, closes, i):
+    """
+    يكتشف أنماط PA البولشية عند نقطة الـ divergence
+    يرجع: (اسم النمط, قوة النمط 1-3)
+    """
+    if i < 1 or i >= len(closes):
+        return "لا نمط", 0
+
+    o, h, l, c = opens[i], highs[i], lows[i], closes[i]
+    po, ph, pl, pc = opens[i-1], highs[i-1], lows[i-1], closes[i-1]
+
+    body      = abs(c - o)
+    full_range = h - l
+    if full_range == 0:
+        return "لا نمط", 0
+
+    upper_wick = h - max(o, c)
+    lower_wick = min(o, c) - l
+    body_pct   = body / full_range
+
+    # ── Pin Bar / Hammer ──
+    # جسم صغير + ذيل سفلي طويل (> 60% من الشمعة) + ذيل علوي صغير
+    if (lower_wick >= full_range * 0.6
+            and body_pct <= 0.35
+            and upper_wick <= full_range * 0.15
+            and c > o):  # إغلاق صاعد
+        return "🔨 Hammer", 3
+
+    # ── Bullish Engulfing ──
+    # الشمعة الحالية تبتلع الشمعة السابقة بالكامل
+    if (pc > po          # الشمعة السابقة هابطة
+            and c > o    # الشمعة الحالية صاعدة
+            and c > ph   # إغلاق فوق أعلى الشمعة السابقة
+            and o < pl): # فتح تحت أدنى الشمعة السابقة
+        return "🟢 Engulfing", 3
+
+    # ── Bullish Engulfing جزئي ──
+    if (pc > po and c > o and c > pc and o <= po):
+        return "🟢 Engulfing جزئي", 2
+
+    # ── Doji عند القاع (تردد = فرصة انعكاس) ──
+    if body_pct <= 0.15 and full_range > 0:
+        return "➖ Doji", 1
+
+    # ── Morning Star (3 شموع) ──
+    if i >= 2:
+        o2, h2, l2, c2 = opens[i-2], highs[i-2], lows[i-2], closes[i-2]
+        body2 = abs(c2 - o2)
+        body_range2 = h2 - l2
+        if (c2 < o2                          # شمعة 1 هابطة
+                and body_pct <= 0.3           # شمعة 2 صغيرة (نجمة)
+                and c > o                     # شمعة 3 صاعدة
+                and c > (o2 + c2) / 2         # إغلاق فوق منتصف الشمعة 1
+                and body2 > 0 and body_range2 > 0
+                and (body2/body_range2) > 0.4):
+            return "⭐ Morning Star", 3
+
+    # ── شمعة صاعدة قوية ──
+    if c > o and body_pct >= 0.6 and c > pc:
+        return "📈 شمعة صاعدة", 2
+
+    # ── لا نمط واضح ──
+    if c > o:
+        return "↑ صاعدة", 1
+    return "↓ هابطة", 0
+
+
+def pa_score(pattern_name, pattern_strength):
+    """يحول نمط PA إلى نقطة تأكيد — الأقوى يأخذ أولوية في الفلترة"""
+    return pattern_strength  # 0=لا تأكيد، 1=ضعيف، 2=متوسط، 3=قوي
+
+# ─────────────────────────────────────────────────────────────
 # 7. كاشف الـ RSI Divergence
 # ─────────────────────────────────────────────────────────────
 def find_divergences(df):
     """
     Bullish  Divergence: سعر يصنع قاعاً أدنى + RSI يصنع قاعاً أعلى → BUY
     Bearish  Divergence: سعر يصنع قمة أعلى  + RSI يصنع قمة أدنى  → تحذير
+    + تأكيد PA: Hammer / Engulfing / Morning Star
     """
     if df.empty or len(df) < RSI_PERIOD + LOOKBACK_SWING + LOOKBACK_DIV:
         return []
@@ -339,6 +415,7 @@ def find_divergences(df):
     closes = df["close"].values
     highs  = df["high"].values
     lows   = df["low"].values
+    opens  = df["open"].values if "open" in df.columns else closes.copy()
     rsi    = calc_rsi(closes, RSI_PERIOD)
     atr    = calc_atr(highs, lows, closes, ATR_PERIOD)
 
@@ -357,14 +434,18 @@ def find_divergences(df):
                     rsi_os      = rsi[j]   < RSI_OS  # القاع القديم في منطقة ذروة البيع
                     rsi_curr_ok = rsi[i] < BULLISH_RSI_MAX  # [v1.1] فلتر RSI الحالي
                     if price_lower and rsi_higher and rsi_os and rsi_curr_ok:
+                        # ── PA تأكيد ──
+                        pa_name, pa_str = detect_pa_pattern(opens, highs, lows, closes, i)
                         entry_i = min(i + CONFIRM_CANDLES, n - 1)
                         entry_p = closes[entry_i]
                         sl      = round(entry_p - atr * ATR_SL_MULT, 3)
                         t1      = round(entry_p + atr * ATR_T1_MULT, 3)
                         t2      = round(entry_p + atr * ATR_T2_MULT, 3)
+                        # إشارة قوية لو PA قوية، عادية لو لا
+                        sig_label = "BUY ⭐ قوي" if pa_str >= 2 else "BUY 🟢"
                         divs.append({
                             "type":       "bullish",
-                            "signal":     "BUY 🟢",
+                            "signal":     sig_label,
                             "index":      i,
                             "entry_index":entry_i,
                             "price":      round(closes[i], 3),
@@ -381,6 +462,8 @@ def find_divergences(df):
                             "t2_pct":     round((t2 - entry_p) / entry_p * 100, 2),
                             "sl_pct":     round((entry_p - sl)  / entry_p * 100, 2),
                             "prev_index": j,
+                            "pa_pattern": pa_name,
+                            "pa_strength":pa_str,
                         })
                         break  # أقوى divergence فقط
 
@@ -439,6 +522,7 @@ def backtest_rsi_div(sym, name, df):
     Backtest على البيانات المتاحة:
     - يكتشف كل Divergences التاريخية
     - يقيس: هل وصل الهدف؟ في كم شمعة؟
+    - يسجّل نمط PA لكل إشارة
     """
     if df.empty or len(df) < RSI_PERIOD + LOOKBACK_SWING * 2 + LOOKBACK_DIV:
         return []
@@ -446,6 +530,7 @@ def backtest_rsi_div(sym, name, df):
     closes = df["close"].values
     highs  = df["high"].values
     lows   = df["low"].values
+    opens  = df["open"].values if "open" in df.columns else closes.copy()
     rsi    = calc_rsi(closes, RSI_PERIOD)
 
     trades = []
@@ -467,6 +552,8 @@ def backtest_rsi_div(sym, name, df):
                     rsi_os      = rsi[j]  < RSI_OS
                     rsi_curr_ok = rsi[i] < BULLISH_RSI_MAX  # [v1.1]
                     if price_lower and rsi_higher and rsi_os and rsi_curr_ok:
+                        # ── PA ──
+                        pa_name, pa_str = detect_pa_pattern(opens, highs, lows, closes, i)
                         entry_i = min(i + CONFIRM_CANDLES, len(closes) - 1)
                         entry_p = closes[entry_i]
                         sl      = entry_p - atr * ATR_SL_MULT
@@ -501,6 +588,8 @@ def backtest_rsi_div(sym, name, df):
                             "الرمز":        sym,
                             "الاسم":        name,
                             "النوع":        "Bullish 📈",
+                            "نمط PA":       pa_name,
+                            "قوة PA":       pa_str,
                             "سعر الدخول":  round(entry_p, 3),
                             "RSI الآن":    round(rsi[i], 1),
                             "RSI السابق":  round(rsi[j], 1),
@@ -610,6 +699,8 @@ def scan_all(tf_key, max_stocks=None):
                     "RSI السابق":    latest["rsi_prev"],
                     "فرق RSI":       latest["rsi_diff"],
                     "ATR":            latest["atr"],
+                    "pa_pattern":     latest.get("pa_pattern", "—"),
+                    "pa_strength":    latest.get("pa_strength", 0),
                     "_type":          latest["type"],
                 })
         except Exception as e:
@@ -824,7 +915,8 @@ with tab_live:
         for i, r in enumerate(show_res):
             card_cls = "div-card-bull" if r["_type"] == "bullish" else "div-card-bear"
             chg_col  = "#16a34a" if r["التغيير%"] >= 0 else "#dc2626"
-            rsi_info = f"RSI الآن: {r['RSI الآن']} | RSI السابق: {r['RSI السابق']} | فرق: +{r['فرق RSI']}"
+            pa_info  = f" | PA: {r.get('pa_pattern','—')} (قوة {r.get('pa_strength',0)})" if r.get('pa_pattern') else ""
+            rsi_info = f"RSI الآن: {r['RSI الآن']} | RSI السابق: {r['RSI السابق']} | فرق: +{r['فرق RSI']}{pa_info}"
 
             with cols[i % 2]:
                 st.markdown(f"""
@@ -991,7 +1083,7 @@ with tab_bt:
             "📈 أداء الأسهم", "📊 مقارنة التايم فريمات"
         ])
 
-        show_cols_bt = ["الرمز","الاسم","النوع","سعر الدخول",
+        show_cols_bt = ["الرمز","الاسم","النوع","نمط PA","قوة PA","سعر الدخول",
                         "RSI الآن","RSI السابق","فرق RSI",
                         "هدف1%","هدف2%","وقف%",
                         "النتيجة","ربح/خسارة%","شموع_للخروج"]
@@ -1084,6 +1176,35 @@ with tab_bt:
                     - المتوسط: `{won_rsi.mean():.1f}`
                     """)
 
+                # ── تحليل PA ──
+                if "نمط PA" in df_bt.columns and "قوة PA" in df_bt.columns:
+                    st.divider()
+                    st.markdown("**📊 أداء كل نمط PA:**")
+                    pa_perf = df_bt.groupby("نمط PA").agg(
+                        إشارات=("ناجحة","count"),
+                        ناجحة=("ناجحة","sum"),
+                        متوسط_ربح=("ربح/خسارة%","mean"),
+                    ).reset_index()
+                    pa_perf["نسبة%"] = (pa_perf["ناجحة"] / pa_perf["إشارات"] * 100).round(1)
+                    pa_perf = pa_perf.sort_values("نسبة%", ascending=False)
+                    st.dataframe(pa_perf, use_container_width=True,
+                        column_config={"نسبة%": st.column_config.ProgressColumn("نسبة%",min_value=0,max_value=100)})
+
+                    # إشارات PA قوية فقط (قوة >= 2)
+                    if "قوة PA" in df_bt.columns:
+                        strong_pa = df_bt[df_bt["قوة PA"] >= 2]
+                        if not strong_pa.empty:
+                            s_won  = strong_pa["ناجحة"].sum()
+                            s_rate = round(s_won / len(strong_pa) * 100, 1)
+                            all_rate = round(df_bt["ناجحة"].sum() / len(df_bt) * 100, 1)
+                            st.markdown(f"""
+                            **🔍 فلترة PA قوية (Hammer + Engulfing + Morning Star):**
+                            - إشارات PA قوية: **{len(strong_pa)}** من {len(df_bt)}
+                            - نسبة نجاحها: **{s_rate}%**
+                            - مقارنة بالكل: **{all_rate}%**
+                            - الفرق: **{s_rate - all_rate:+.1f}%** {"✅ PA تحسّن النتائج" if s_rate > all_rate else "⚠️ PA لم تحسّن"}
+                            """)
+
 # ═══════════════════════════════════════════════════════════
 # TAB 3 — الإعدادات
 # ═══════════════════════════════════════════════════════════
@@ -1140,4 +1261,4 @@ with tab_settings:
     """)
 
 st.divider()
-st.caption(f"📡 RSI Divergence v1.1 — آخر مسح: {st.session_state.last_scan or '—'} | للمعلومات فقط، ليست توصية استثمارية")
+st.caption(f"📡 RSI Divergence v1.2 — RSI Div + Price Action — آخر مسح: {st.session_state.last_scan or '—'} | للمعلومات فقط، ليست توصية استثمارية")
