@@ -9,12 +9,14 @@
 #
 # قواعد الدخول:
 #   Bullish Divergence: سعر يصنع قاعاً أدنى + RSI يصنع قاعاً أعلى → BUY
-#   Bearish Divergence: سعر يصنع قمة أعلى + RSI يصنع قمة أدنى → SELL/WAIT
+#                       + شرط جديد: RSI الحالي < 45 (ضمان منطقة ضعف)
+#   Bearish Divergence: سعر يصنع قمة أعلى + RSI يصنع قمة أدنى → WAIT
 #
-# الخروج:
-#   Stop Loss  = entry - (ATR × 2)
-#   Target 1   = entry + (ATR × 2)   → R:R = 1:1
-#   Target 2   = entry + (ATR × 3.5) → R:R = 1:1.75
+# [v1.1 — تعديلات بناءً على Backtest]
+#   - ATR_SL_MULT: 2.0 → 1.5  (وقف أضيق → R/R أحسن)
+#   - ATR_T1_MULT: 2.0 → 1.5  (هدف 1 أقرب → يُصاب أكثر)
+#   - ATR_T2_MULT: 3.5 → 3.0  (هدف 2 معقول)
+#   - BULLISH_RSI_MAX: جديد = 45 (فلتر جودة للـ Bullish)
 # ================================================================
 
 import streamlit as st
@@ -54,9 +56,10 @@ LOOKBACK_DIV     = 30   # أبعد نطاق نبحث فيه عن divergence
 CONFIRM_CANDLES  = 2    # عدد الشموع للتأكيد قبل الدخول
 RSI_OB           = 65   # RSI ذروة شراء (Bearish Div)
 RSI_OS           = 35   # RSI ذروة بيع (Bullish Div)
-ATR_SL_MULT      = 2.0  # مضاعف ATR للوقف
-ATR_T1_MULT      = 2.0  # مضاعف ATR للهدف 1
-ATR_T2_MULT      = 3.5  # مضاعف ATR للهدف 2
+BULLISH_RSI_MAX  = 45   # [v1.1] RSI الحالي لازم < 45 للـ Bullish — فلتر جودة إضافي
+ATR_SL_MULT      = 1.5  # [v1.1] خُفّض من 2.0 → وقف أضيق = R/R أحسن
+ATR_T1_MULT      = 1.5  # [v1.1] خُفّض من 2.0 → هدف 1 أقرب = يُصاب أكثر
+ATR_T2_MULT      = 3.0  # [v1.1] خُفّض من 3.5 → هدف 2 معقول
 MIN_RSI_DIFF     = 3.0  # أقل فرق RSI مقبول لتأكيد الـ divergence
 MIN_PRICE_DIFF   = 0.3  # أقل فرق سعري % مقبول
 MIN_LIQ          = 5    # أقل سيولة مقبولة
@@ -315,7 +318,8 @@ def find_divergences(df):
                     price_lower = lows[i] < lows[j] * (1 - MIN_PRICE_DIFF/100)
                     rsi_higher  = rsi[i]   > rsi[j] + MIN_RSI_DIFF
                     rsi_os      = rsi[j]   < RSI_OS  # القاع القديم في منطقة ذروة البيع
-                    if price_lower and rsi_higher and rsi_os:
+                    rsi_curr_ok = rsi[i] < BULLISH_RSI_MAX  # [v1.1] فلتر RSI الحالي
+                    if price_lower and rsi_higher and rsi_os and rsi_curr_ok:
                         entry_i = min(i + CONFIRM_CANDLES, n - 1)
                         entry_p = closes[entry_i]
                         sl      = round(entry_p - atr * ATR_SL_MULT, 3)
@@ -424,7 +428,8 @@ def backtest_rsi_div(sym, name, df):
                     price_lower = lows[i] < lows[j] * (1 - MIN_PRICE_DIFF/100)
                     rsi_higher  = rsi[i]  > rsi[j] + MIN_RSI_DIFF
                     rsi_os      = rsi[j]  < RSI_OS
-                    if price_lower and rsi_higher and rsi_os:
+                    rsi_curr_ok = rsi[i] < BULLISH_RSI_MAX  # [v1.1]
+                    if price_lower and rsi_higher and rsi_os and rsi_curr_ok:
                         entry_i = min(i + CONFIRM_CANDLES, len(closes) - 1)
                         entry_p = closes[entry_i]
                         sl      = entry_p - atr * ATR_SL_MULT
@@ -1058,6 +1063,7 @@ with tab_settings:
         - **فترة RSI:** `{RSI_PERIOD}` شمعة
         - **ذروة الشراء (OB):** `{RSI_OB}` — للـ Bearish Divergence
         - **ذروة البيع (OS):** `{RSI_OS}` — للـ Bullish Divergence
+        - **فلتر RSI الحالي (Bullish):** < `{BULLISH_RSI_MAX}` — يضمن منطقة ضعف ✅
         - **أقل فرق RSI:** `{MIN_RSI_DIFF}` نقطة
         """)
 
@@ -1072,9 +1078,9 @@ with tab_settings:
         st.markdown("#### ATR والأهداف")
         st.info(f"""
         - **فترة ATR:** `{ATR_PERIOD}` شمعة
-        - **وقف الخسارة:** ATR × `{ATR_SL_MULT}`
-        - **الهدف 1:** ATR × `{ATR_T1_MULT}` → R:R 1:1
-        - **الهدف 2:** ATR × `{ATR_T2_MULT}` → R:R 1:1.75
+        - **وقف الخسارة:** ATR × `{ATR_SL_MULT}` *(خُفّض من 2.0)*
+        - **الهدف 1:** ATR × `{ATR_T1_MULT}` → R:R 1:1 *(خُفّض من 2.0)*
+        - **الهدف 2:** ATR × `{ATR_T2_MULT}` → R:R 1:2 *(خُفّض من 3.5)*
         - **أقل تغيير سعري:** `{MIN_PRICE_DIFF}%`
         """)
 
@@ -1097,4 +1103,4 @@ with tab_settings:
     """)
 
 st.divider()
-st.caption(f"📡 RSI Divergence v1.0 — آخر مسح: {st.session_state.last_scan or '—'} | للمعلومات فقط، ليست توصية استثمارية")
+st.caption(f"📡 RSI Divergence v1.1 — آخر مسح: {st.session_state.last_scan or '—'} | للمعلومات فقط، ليست توصية استثمارية")
