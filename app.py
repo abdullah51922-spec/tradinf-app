@@ -854,18 +854,21 @@ def backtest_rsi_div(sym, name, df):
                     rsi_os      = rsi[j]  < RSI_OS
                     if price_lower and rsi_higher and rsi_os:
                         # ── S/R يومي لنقطة i ──
-                        d_sup_i, d_res_i = find_support_resistance(
-                            list(closes[:i+1]), list(highs[:i+1]), list(lows[:i+1]),
-                            n_swing=5, lookback=min(SR_LOOKBACK, i),
-                            tolerance=SR_TOLERANCE
-                        )
-                        all_sup_i = sorted(set(d_sup_i + w_sup_all))
-                        near_sup, sup_level, sup_dist = price_near_support(
-                            lows[i], all_sup_i, SR_TOLERANCE
-                        )
+                        try:
+                            d_sup_i, d_res_i = find_support_resistance(
+                                list(closes[:i+1]), list(highs[:i+1]), list(lows[:i+1]),
+                                n_swing=5, lookback=min(SR_LOOKBACK, i),
+                                tolerance=SR_TOLERANCE
+                            )
+                            all_sup_i = sorted(set(d_sup_i + w_sup_all))
+                            near_sup, sup_level, sup_dist = price_near_support(
+                                lows[i], all_sup_i, SR_TOLERANCE
+                            )
+                            is_weekly_sup = any(abs(sup_level - ws) / max(ws,1) < 0.01 for ws in w_sup_all) if w_sup_all else False
+                        except:
+                            near_sup, sup_level, sup_dist, is_weekly_sup = False, 0.0, 0.0, False
                         if not near_sup:
                             break  # ليس عند دعم
-                        is_weekly_sup = any(abs(sup_level - ws) / max(ws,1) < 0.01 for ws in w_sup_all)
                         pa_name, pa_str = "", 0
                         vol_ratio = 0.0
                         entry_i = min(i + CONFIRM_CANDLES, len(closes) - 1)
@@ -902,11 +905,11 @@ def backtest_rsi_div(sym, name, df):
                             "الرمز":        sym,
                             "الاسم":        name,
                             "النوع":        "Bullish 📈",
-                            "نمط PA":       pa_name,
-                            "قوة PA":       pa_str,
-                            "حجم×":         vol_ratio,
-                            "مستوى الدعم":  round(sup_level, 3),
-                            "بُعد الدعم%":  sup_dist,
+                            "نمط PA":       pa_name if pa_name else "",
+                            "قوة PA":       pa_str if pa_str else 0,
+                            "حجم×":         vol_ratio if vol_ratio else 0.0,
+                            "مستوى الدعم":  round(sup_level, 3) if sup_level else 0.0,
+                            "بُعد الدعم%":  sup_dist if sup_dist else 0.0,
                             "دعم أسبوعي":   "⭐" if is_weekly_sup else "",
                             "سعر الدخول":  round(entry_p, 3),
                             "RSI الآن":    round(rsi[i], 1),
@@ -955,21 +958,27 @@ def backtest_rsi_div(sym, name, df):
                                 outcome = "❌ لم يتراجع"
                                 exit_candle = k - entry_i; break
                         trades.append({
-                            "الرمز":       sym,
-                            "الاسم":       name,
-                            "النوع":       "Bearish ⚠️",
-                            "سعر الدخول": round(entry_p, 3),
-                            "RSI الآن":   round(rsi[i], 1),
-                            "RSI السابق": round(rsi[j], 1),
-                            "فرق RSI":    round(rsi[j] - rsi[i], 1),
-                            "ATR":         round(atr, 4),
-                            "هدف1%":      round((entry_p - t1) / entry_p * 100, 2),
-                            "هدف2%":      round((entry_p - t2) / entry_p * 100, 2),
-                            "وقف%":       round((sl - entry_p) / entry_p * 100, 2),
-                            "النتيجة":     outcome,
-                            "ربح/خسارة%": pnl_pct,
-                            "شموع_للخروج":exit_candle,
-                            "ناجحة":      1 if ("✅" in outcome or "🟡" in outcome) else 0,
+                            "الرمز":        sym,
+                            "الاسم":        name,
+                            "النوع":        "Bearish ⚠️",
+                            "نمط PA":       "",
+                            "قوة PA":       0,
+                            "حجم×":         0.0,
+                            "مستوى الدعم":  0.0,
+                            "بُعد الدعم%":  0.0,
+                            "دعم أسبوعي":   "",
+                            "سعر الدخول":  round(entry_p, 3),
+                            "RSI الآن":    round(rsi[i], 1),
+                            "RSI السابق":  round(rsi[j], 1),
+                            "فرق RSI":     round(rsi[j] - rsi[i], 1),
+                            "ATR":          round(atr, 4),
+                            "هدف1%":       round((entry_p - t1) / entry_p * 100, 2),
+                            "هدف2%":       round((entry_p - t2) / entry_p * 100, 2),
+                            "وقف%":        round((sl - entry_p) / entry_p * 100, 2),
+                            "النتيجة":      outcome,
+                            "ربح/خسارة%":  pnl_pct,
+                            "شموع_للخروج": exit_candle,
+                            "ناجحة":       1 if ("✅" in outcome or "🟡" in outcome) else 0,
                         })
                         used_indices.update(range(i - 3, i + 4))
                         break
