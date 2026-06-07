@@ -853,7 +853,7 @@ def backtest_rsi_div(sym, name, df):
                     rsi_higher  = rsi[i]  > rsi[j] + MIN_RSI_DIFF
                     rsi_os      = rsi[j]  < RSI_OS
                     if price_lower and rsi_higher and rsi_os:
-                        # ── S/R يومي لنقطة i ──
+                        # ── S/R يومي لنقطة i — معلومة إضافية ──
                         try:
                             d_sup_i, d_res_i = find_support_resistance(
                                 list(closes[:i+1]), list(highs[:i+1]), list(lows[:i+1]),
@@ -867,8 +867,7 @@ def backtest_rsi_div(sym, name, df):
                             is_weekly_sup = any(abs(sup_level - ws) / max(ws,1) < 0.01 for ws in w_sup_all) if w_sup_all else False
                         except:
                             near_sup, sup_level, sup_dist, is_weekly_sup = False, 0.0, 0.0, False
-                        if not near_sup:
-                            break  # ليس عند دعم
+                        # لا نحذف الإشارة — S/R معلومة فقط
                         pa_name, pa_str = "", 0
                         vol_ratio = 0.0
                         entry_i = min(i + CONFIRM_CANDLES, len(closes) - 1)
@@ -908,6 +907,7 @@ def backtest_rsi_div(sym, name, df):
                             "نمط PA":       pa_name if pa_name else "",
                             "قوة PA":       pa_str if pa_str else 0,
                             "حجم×":         vol_ratio if vol_ratio else 0.0,
+                            "عند دعم":      "✅" if near_sup else "",
                             "مستوى الدعم":  round(sup_level, 3) if sup_level else 0.0,
                             "بُعد الدعم%":  sup_dist if sup_dist else 0.0,
                             "دعم أسبوعي":   "⭐" if is_weekly_sup else "",
@@ -1372,7 +1372,7 @@ with tab_bt:
             all_t = [t for t in all_t if "Bearish" in t.get("النوع","")]
 
         # تنظيف — احذف أي صف ناقص أعمدة أساسية
-        required_cols = ["ناجحة", "النتيجة", "ربح/خسارة%", "شموع_للخروج"]
+        required_cols = ["ناجحة", "النتيجة", "ربح/خسارة%"]
         clean_trades = []
         for t in all_t:
             if all(k in t for k in required_cols):
@@ -1438,7 +1438,7 @@ with tab_bt:
             "📈 أداء الأسهم", "📊 مقارنة التايم فريمات"
         ])
 
-        show_cols_bt = ["الرمز","الاسم","النوع","مستوى الدعم","بُعد الدعم%","دعم أسبوعي",
+        show_cols_bt = ["الرمز","الاسم","النوع","عند دعم","مستوى الدعم","بُعد الدعم%","دعم أسبوعي",
                         "سعر الدخول","RSI الآن","RSI السابق","فرق RSI",
                         "هدف1%","هدف2%","وقف%",
                         "النتيجة","ربح/خسارة%","شموع_للخروج"]
@@ -1530,6 +1530,27 @@ with tab_bt:
                     - أكبر فرق: `{won_rsi.max():.1f}`
                     - المتوسط: `{won_rsi.mean():.1f}`
                     """)
+
+                # ── تحليل S/R — قيمة إضافية الدعم ──
+                if "عند دعم" in df_bt.columns:
+                    at_sup  = df_bt[df_bt["عند دعم"] == "✅"]
+                    no_sup  = df_bt[df_bt["عند دعم"] != "✅"]
+                    if not at_sup.empty and not no_sup.empty:
+                        sup_rate  = round(at_sup["ناجحة"].sum() / len(at_sup) * 100, 1)
+                        nosup_rate= round(no_sup["ناجحة"].sum() / len(no_sup) * 100, 1)
+                        w_sup_df  = df_bt[df_bt["دعم أسبوعي"] == "⭐"] if "دعم أسبوعي" in df_bt.columns else pd.DataFrame()
+                        w_rate    = round(w_sup_df["ناجحة"].sum() / len(w_sup_df) * 100, 1) if not w_sup_df.empty else 0
+                        st.divider()
+                        st.markdown("**📐 تأثير مستويات الدعم:**")
+                        sa1, sa2, sa3 = st.columns(3)
+                        sa1.metric("عند دعم يومي/أسبوعي", f"{len(at_sup)} إشارة", f"نسبة {sup_rate}%")
+                        sa2.metric("بدون دعم", f"{len(no_sup)} إشارة", f"نسبة {nosup_rate}%")
+                        sa3.metric("⭐ دعم أسبوعي فقط", f"{len(w_sup_df)} إشارة", f"نسبة {w_rate}%")
+                        diff = sup_rate - nosup_rate
+                        if diff > 0:
+                            st.success(f"✅ الدعم يُحسّن النسبة بـ +{diff:.1f}% — يستحق الفلترة به")
+                        else:
+                            st.warning(f"⚠️ الدعم لم يُحسّن النسبة ({diff:.1f}%) — ربما يحتاج ضبط")
 
                 # ── تحليل PA ──
                 if "نمط PA" in df_bt.columns and "قوة PA" in df_bt.columns:
