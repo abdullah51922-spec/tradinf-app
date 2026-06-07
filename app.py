@@ -194,9 +194,14 @@ def get_intraday_5min(sym):
 
 @st.cache_data(ttl=300)
 def get_intraday_60min(sym):
-    """بيانات 60 دقيقة"""
+    """
+    بيانات 60 دقيقة — مبنية بطريقتين:
+    1. نحاول API مباشرة مع from_date
+    2. fallback: نجمع شموع الـ 5 دقائق يدوياً كل 12 شمعة = 60 دقيقة
+    """
+    # ── الطريقة 1: API مباشر مع تاريخ ──
     try:
-        h = client.historical(sym, interval="60min")
+        h = client.historical(sym, interval="60min", from_date="2024-01-01")
         rows = []
         for item in h.data:
             if item.close and item.close > 0:
@@ -207,7 +212,39 @@ def get_intraday_60min(sym):
                     "open":  float(item.open  or item.close),
                     "volume":float(item.volume or 0),
                 })
-        return pd.DataFrame(rows) if rows else pd.DataFrame()
+        if len(rows) >= 50:
+            return pd.DataFrame(rows)
+    except:
+        pass
+
+    # ── الطريقة 2: نجمع الـ 5 دقائق يدوياً ──
+    try:
+        h = client.intraday(sym, interval="5min")
+        rows_5 = []
+        for item in h.data:
+            if item.close and item.close > 0:
+                rows_5.append({
+                    "close": float(item.close),
+                    "high":  float(item.high  or item.close),
+                    "low":   float(item.low   or item.close),
+                    "open":  float(item.open  or item.close),
+                    "volume":float(item.volume or 0),
+                })
+        if len(rows_5) < 12:
+            return pd.DataFrame()
+        # كل 12 شمعة × 5 دقائق = 60 دقيقة
+        rows_60 = []
+        chunk = 12
+        for i in range(0, len(rows_5) - chunk + 1, chunk):
+            group = rows_5[i:i+chunk]
+            rows_60.append({
+                "open":   group[0]["open"],
+                "high":   max(r["high"]   for r in group),
+                "low":    min(r["low"]    for r in group),
+                "close":  group[-1]["close"],
+                "volume": sum(r["volume"] for r in group),
+            })
+        return pd.DataFrame(rows_60) if rows_60 else pd.DataFrame()
     except:
         return pd.DataFrame()
 
