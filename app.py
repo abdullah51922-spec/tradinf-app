@@ -434,8 +434,10 @@ def find_divergences(df):
                     rsi_os      = rsi[j]   < RSI_OS  # القاع القديم في منطقة ذروة البيع
                     rsi_curr_ok = rsi[i] < BULLISH_RSI_MAX  # [v1.1] فلتر RSI الحالي
                     if price_lower and rsi_higher and rsi_os and rsi_curr_ok:
-                        # ── PA تأكيد ──
+                        # ── PA تأكيد — شرط إلزامي: قوة PA >= 1 على الأقل ──
                         pa_name, pa_str = detect_pa_pattern(opens, highs, lows, closes, i)
+                        if pa_str == 0:
+                            break  # لا نمط = لا إشارة
                         entry_i = min(i + CONFIRM_CANDLES, n - 1)
                         entry_p = closes[entry_i]
                         sl      = round(entry_p - atr * ATR_SL_MULT, 3)
@@ -552,8 +554,10 @@ def backtest_rsi_div(sym, name, df):
                     rsi_os      = rsi[j]  < RSI_OS
                     rsi_curr_ok = rsi[i] < BULLISH_RSI_MAX  # [v1.1]
                     if price_lower and rsi_higher and rsi_os and rsi_curr_ok:
-                        # ── PA ──
+                        # ── PA — شرط إلزامي ──
                         pa_name, pa_str = detect_pa_pattern(opens, highs, lows, closes, i)
+                        if pa_str == 0:
+                            break  # لا نمط = لا إشارة
                         entry_i = min(i + CONFIRM_CANDLES, len(closes) - 1)
                         entry_p = closes[entry_i]
                         sl      = entry_p - atr * ATR_SL_MULT
