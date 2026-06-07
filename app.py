@@ -56,14 +56,12 @@ LOOKBACK_DIV     = 30   # أبعد نطاق نبحث فيه عن divergence
 CONFIRM_CANDLES  = 2    # عدد الشموع للتأكيد قبل الدخول
 RSI_OB           = 65   # RSI ذروة شراء (Bearish Div)
 RSI_OS           = 35   # RSI ذروة بيع (Bullish Div)
-BULLISH_RSI_MAX  = 45   # [v1.1] RSI الحالي لازم < 45 للـ Bullish — فلتر جودة إضافي
-ATR_SL_MULT      = 1.5  # [v1.1] خُفّض من 2.0 → وقف أضيق = R/R أحسن
-ATR_T1_MULT      = 1.5  # [v1.1] خُفّض من 2.0 → هدف 1 أقرب = يُصاب أكثر
-ATR_T2_MULT      = 3.0  # [v1.1] خُفّض من 3.5 → هدف 2 معقول
+ATR_SL_MULT      = 2.0  # مضاعف ATR للوقف
+ATR_T1_MULT      = 2.0  # مضاعف ATR للهدف 1
+ATR_T2_MULT      = 3.5  # مضاعف ATR للهدف 2
 MIN_RSI_DIFF     = 3.0  # أقل فرق RSI مقبول لتأكيد الـ divergence
 MIN_PRICE_DIFF   = 0.3  # أقل فرق سعري % مقبول
 MIN_LIQ          = 5    # أقل سيولة مقبولة
-VOL_CONFIRM_MULT  = 1.2  # حجم اليوم لازم > 1.2× المتوسط 20 يوم
 
 # تايم فريمات
 TIMEFRAMES = {
@@ -611,16 +609,11 @@ def find_divergences(df):
                     price_lower = lows[i] < lows[j] * (1 - MIN_PRICE_DIFF/100)
                     rsi_higher  = rsi[i]   > rsi[j] + MIN_RSI_DIFF
                     rsi_os      = rsi[j]   < RSI_OS  # القاع القديم في منطقة ذروة البيع
-                    rsi_curr_ok = rsi[i] < BULLISH_RSI_MAX  # [v1.1] فلتر RSI الحالي
-                    if price_lower and rsi_higher and rsi_os and rsi_curr_ok:
+                    if price_lower and rsi_higher and rsi_os:
                         # ── PA تأكيد — شرط إلزامي ──
                         pa_name, pa_str = detect_pa_pattern(opens, highs, lows, closes, i)
                         if pa_str == 0:
                             break  # لا نمط = لا إشارة
-                        # ── حجم التداول — شرط إلزامي ──
-                        vol_ok, vol_ratio = vol_is_confirmed(volumes, i)
-                        if not vol_ok:
-                            break  # حجم ضعيف = لا إشارة
                         entry_i = min(i + CONFIRM_CANDLES, n - 1)
                         entry_p = closes[entry_i]
                         sl      = round(entry_p - atr * ATR_SL_MULT, 3)
@@ -736,16 +729,9 @@ def backtest_rsi_div(sym, name, df):
                     price_lower = lows[i] < lows[j] * (1 - MIN_PRICE_DIFF/100)
                     rsi_higher  = rsi[i]  > rsi[j] + MIN_RSI_DIFF
                     rsi_os      = rsi[j]  < RSI_OS
-                    rsi_curr_ok = rsi[i] < BULLISH_RSI_MAX  # [v1.1]
-                    if price_lower and rsi_higher and rsi_os and rsi_curr_ok:
-                        # ── PA — شرط إلزامي ──
-                        pa_name, pa_str = detect_pa_pattern(opens, highs, lows, closes, i)
-                        if pa_str == 0:
-                            break  # لا نمط = لا إشارة
-                        # ── حجم التداول — شرط إلزامي ──
-                        vol_ok, vol_ratio = vol_is_confirmed(volumes, i)
-                        if not vol_ok:
-                            break  # حجم ضعيف = لا إشارة
+                    if price_lower and rsi_higher and rsi_os:
+                        pa_name, pa_str = "", 0
+                        vol_ratio = 0.0
                         entry_i = min(i + CONFIRM_CANDLES, len(closes) - 1)
                         entry_p = closes[entry_i]
                         sl      = entry_p - atr * ATR_SL_MULT
@@ -1424,7 +1410,6 @@ with tab_settings:
         - **فترة RSI:** `{RSI_PERIOD}` شمعة
         - **ذروة الشراء (OB):** `{RSI_OB}` — للـ Bearish Divergence
         - **ذروة البيع (OS):** `{RSI_OS}` — للـ Bullish Divergence
-        - **فلتر RSI الحالي (Bullish):** < `{BULLISH_RSI_MAX}` — يضمن منطقة ضعف ✅
         - **أقل فرق RSI:** `{MIN_RSI_DIFF}` نقطة
         """)
 
@@ -1439,9 +1424,9 @@ with tab_settings:
         st.markdown("#### ATR والأهداف")
         st.info(f"""
         - **فترة ATR:** `{ATR_PERIOD}` شمعة
-        - **وقف الخسارة:** ATR × `{ATR_SL_MULT}` *(خُفّض من 2.0)*
-        - **الهدف 1:** ATR × `{ATR_T1_MULT}` → R:R 1:1 *(خُفّض من 2.0)*
-        - **الهدف 2:** ATR × `{ATR_T2_MULT}` → R:R 1:2 *(خُفّض من 3.5)*
+        - **وقف الخسارة:** ATR × `{ATR_SL_MULT}`
+        - **الهدف 1:** ATR × `{ATR_T1_MULT}` → R:R 1:1
+        - **الهدف 2:** ATR × `{ATR_T2_MULT}` → R:R 1:1.75
         - **أقل تغيير سعري:** `{MIN_PRICE_DIFF}%`
         """)
 
@@ -1464,4 +1449,4 @@ with tab_settings:
     """)
 
 st.divider()
-st.caption(f"📡 RSI Divergence v1.3 — RSI Div + PA + Volume — آخر مسح: {st.session_state.last_scan or '—'} | للمعلومات فقط، ليست توصية استثمارية")
+st.caption(f"📡 RSI Divergence v1.0 — RSI Divergence فقط — آخر مسح: {st.session_state.last_scan or '—'} | للمعلومات فقط، ليست توصية استثمارية")
